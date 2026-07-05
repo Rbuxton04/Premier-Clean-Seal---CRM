@@ -153,6 +153,7 @@ model Property {
   postcode     String
   propertyType PropertyType @default(RESIDENTIAL)
   notes        String?
+  createdAt    DateTime @default(now())
   jobs         Job[]
   enquiries    Enquiry[]
 
