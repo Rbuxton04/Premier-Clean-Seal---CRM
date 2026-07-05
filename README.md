@@ -60,6 +60,25 @@ docker run --name premier-db -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=premier_crm
 - **Numbering** — quote `#Q-0000`, invoice `#I-0000` (prefix + zeros = pad width). Counters
   increment atomically in `src/lib/numbering.ts`.
 
+## Cloudflare R2 (photo/video uploads)
+
+The public quote-request form and enquiry pipeline accept photos and videos, uploaded
+directly to Cloudflare R2 (never proxied through the Render dyno). Until `R2_*` is set,
+the upload UI stays visible but uploads are skipped client-side — enquiries still submit
+fine, just without attachments.
+
+To switch it on:
+
+1. Create an R2 bucket in the Cloudflare dashboard (e.g. `premier-crm`), and an API token
+   scoped to that bucket (Account → R2 → Manage API Tokens).
+2. Add to `.env` (and the Render dashboard): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
+   `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
+3. Add `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` (R2 is S3-compatible) and
+   implement `presignUpload()` in `src/lib/storage/r2.ts` — it already has the right shape
+   (`{ uploadUrl, publicUrl }`), the public form and `/api/uploads/presign` route call it as
+   soon as `isR2Configured()` returns true, no other code needs to change.
+4. Turn on public read (or a custom domain) for the bucket so `publicUrl`s are viewable.
+
 ## Deploying to Render (free tier)
 
 1. Push this repo to GitHub.

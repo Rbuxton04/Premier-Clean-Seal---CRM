@@ -137,6 +137,75 @@ async function main() {
     console.log("Seeded sample customers.");
   }
 
+  // Sample enquiries across a few pipeline stages so the Kanban isn't empty.
+  const existingEnquiries = await db.enquiry.count({ where: { organisationId: org.id } });
+  if (existingEnquiries === 0) {
+    const sarah = await db.customer.findFirst({ where: { organisationId: org.id, name: "Sarah Whitfield" } });
+
+    await db.enquiry.create({
+      data: {
+        organisationId: org.id,
+        name: "Michael Ogden",
+        phone: "07700 900112",
+        email: "m.ogden@example.co.uk",
+        addressText: "22 Chapel Lane",
+        postcode: "WN2 3JD",
+        propertyType: "RESIDENTIAL",
+        workTypes: ["BATHROOM", "CUT_OUT_RESEAL"],
+        description: "Mould around the bath seal, would like it cut out and redone in white.",
+        preferredContact: "PHONE",
+        consentGiven: true,
+        stage: "NEW",
+        priority: "NORMAL",
+        kanbanOrder: 0,
+      },
+    });
+
+    await db.enquiry.create({
+      data: {
+        organisationId: org.id,
+        name: "Sarah Whitfield",
+        company: "Whitfield Lettings Ltd",
+        phone: "07700 900654",
+        email: "sarah@whitfieldlettings.co.uk",
+        customerId: sarah?.id,
+        addressText: "The Old Mill, Unit 4",
+        postcode: "WN3 5BD",
+        propertyType: "COMMERCIAL",
+        workTypes: ["EXTERNAL_WINDOWS", "EXPANSION_JOINTS"],
+        description: "Annual reseal of external window units and two expansion joints before winter.",
+        preferredContact: "EMAIL",
+        consentGiven: true,
+        stage: "QUOTED",
+        priority: "HIGH",
+        estimatedValue: 640,
+        kanbanOrder: 0,
+      },
+    });
+
+    await db.enquiry.create({
+      data: {
+        organisationId: org.id,
+        name: "Priya Kaur",
+        phone: "07700 900778",
+        email: "priya.kaur@example.co.uk",
+        addressText: "9 Beech Grove",
+        postcode: "WN5 8QF",
+        propertyType: "RESIDENTIAL",
+        workTypes: ["KITCHEN", "SHOWER"],
+        description: "New kitchen worktop upstand and shower enclosure sealing, ideally this month.",
+        preferredContact: "WHATSAPP",
+        consentGiven: true,
+        stage: "WAITING_DECISION",
+        priority: "NORMAL",
+        estimatedValue: 220,
+        kanbanOrder: 0,
+      },
+    });
+
+    console.log("Seeded sample enquiries.");
+  }
+
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);
 }
 
