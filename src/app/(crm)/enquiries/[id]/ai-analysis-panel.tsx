@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useState, useTransition } from "react";
 import { useFormState, useFormStatus } from "react-dom";
 import { Sparkles, RefreshCw, FileText, ImageOff, X } from "lucide-react";
@@ -123,6 +124,7 @@ export function AiAnalysisPanel({
   photosAvailable,
   hasPhotos,
   products,
+  hasCustomer,
 }: {
   enquiryId: string;
   analysis: Analysis | null;
@@ -131,6 +133,7 @@ export function AiAnalysisPanel({
   photosAvailable: boolean;
   hasPhotos: boolean;
   products: ProductOption[];
+  hasCustomer: boolean;
 }) {
   const productOptions: ComboboxOption[] = products.map((p) => ({
     value: p.id,
@@ -206,9 +209,17 @@ export function AiAnalysisPanel({
         <AiFieldsForm enquiryId={enquiryId} analysis={analysis} productOptions={productOptions} colourOptions={colourOptions} />
 
         <div className="border-t pt-4">
-          <Button type="button" disabled className="w-full">
-            <FileText className="h-4 w-4" /> Create quote from this — available in Milestone 4
-          </Button>
+          {hasCustomer ? (
+            <Button asChild className="w-full">
+              <Link href={`/quotes/new?enquiryId=${enquiryId}`}>
+                <FileText className="h-4 w-4" /> Create quote from this
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" disabled className="w-full">
+              <FileText className="h-4 w-4" /> Create quote — convert to customer first
+            </Button>
+          )}
         </div>
       </CardContent>
     </Card>

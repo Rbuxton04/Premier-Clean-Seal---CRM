@@ -79,6 +79,25 @@ To switch it on:
    soon as `isR2Configured()` returns true, no other code needs to change.
 4. Turn on public read (or a custom domain) for the bucket so `publicUrl`s are viewable.
 
+## Quotes & e-approval
+
+Quotes are built in-app (`/quotes`), rendered as a branded PDF (`@react-pdf/renderer`,
+`src/lib/pdf/quote-pdf.tsx`), and sent to the customer with a tokened approval link at
+`/quote/[token]` — no login required, the token is the credential. Approving records a typed
+name + IP as the electronic acceptance; this is a reasonable acceptance for a trade quote, not
+a formal qualified e-signature service.
+
+- **PDF generation always works**, R2 or not — the download routes render on demand. If `R2_*`
+  is set, `sendQuote()` also persists a copy to `quotes/<number>.pdf` and stores the URL on
+  `Quote.pdfUrl` as a cache; add `@aws-sdk/client-s3` and implement `uploadBuffer()` in
+  `src/lib/storage/r2.ts` to switch this on (same seam shape as the presigned-upload one above).
+- **Emailing needs `RESEND_API_KEY`.** Until it's set, "Send" still generates the approval
+  token/link and marks the quote `SENT` — staff copy the link from the in-app banner instead of
+  it being emailed. Add the key and `sendQuote()` starts emailing automatically, no other code
+  changes.
+- **Deposit payment is a stub.** The approval page shows the deposit amount with a disabled
+  "Pay deposit" button — real card payment needs Stripe (or another PSP), a later milestone.
+
 ## Deploying to Render (free tier)
 
 1. Push this repo to GitHub.
@@ -111,13 +130,15 @@ src/app/(crm)/     authenticated CRM pages
 src/app/sign-in/   Clerk sign-in
 src/components/    shell (sidebar, topbar, swoosh) + ui primitives
 src/lib/           db client, settings/VAT helper, document numbering, utils
+src/lib/pdf/       branded PDF generators (@react-pdf/renderer)
+src/lib/email/     Resend email seam
 render.yaml        one-click Render blueprint
 ```
 
 ## Milestones
 
 0 Foundation ✅ · 1 Customers · 2 Lead capture & Kanban · 3 AI enquiry analysis ·
-4 Quotes & e-approval · 5 Jobs & calendar · 6 Completion, materials & warranty ·
+4 Quotes & e-approval ✅ · 5 Jobs & calendar · 6 Completion, materials & warranty ·
 7 Galleries & documents · 8 Automated marketing · 9 Dashboard charts & insights ·
 10 AI search · 11 Customer portal · 12 Hardening & GDPR
 

@@ -119,6 +119,7 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
             photosAvailable={photosAvailable}
             hasPhotos={enquiry.files.some((f) => f.kind === "PHOTO")}
             products={products}
+            hasCustomer={Boolean(enquiry.customerId)}
           />
         </div>
 
@@ -175,16 +176,22 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
             </CardContent>
           </Card>
 
-          {!enquiry.aiAnalysis && (
-            <Card className="opacity-70">
-              <CardHeader><CardTitle className="text-base">Quote</CardTitle></CardHeader>
-              <CardContent>
-                <Button type="button" disabled className="w-full">
-                  <FileText className="h-4 w-4" /> Create quote — available in Milestone 4
+          <Card className={enquiry.customerId ? undefined : "opacity-70"}>
+            <CardHeader><CardTitle className="text-base">Quote</CardTitle></CardHeader>
+            <CardContent>
+              {enquiry.customerId ? (
+                <Button asChild className="w-full">
+                  <Link href={`/quotes/new?enquiryId=${enquiry.id}`}>
+                    <FileText className="h-4 w-4" /> Create quote
+                  </Link>
                 </Button>
-              </CardContent>
-            </Card>
-          )}
+              ) : (
+                <Button type="button" disabled className="w-full">
+                  <FileText className="h-4 w-4" /> Create quote — convert to customer first
+                </Button>
+              )}
+            </CardContent>
+          </Card>
         </div>
       </div>
     </div>

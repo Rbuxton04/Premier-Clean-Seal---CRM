@@ -1,3 +1,4 @@
+import { randomBytes } from "crypto";
 import { PrismaClient } from "@prisma/client";
 
 const db = new PrismaClient();
@@ -232,6 +233,96 @@ async function main() {
     });
 
     console.log("Seeded sample enquiries.");
+  }
+
+  // Sample quotes across the lifecycle (draft / sent / approved) so the
+  // list and public approval flow aren't empty on first view.
+  const existingQuotes = await db.quote.count({ where: { organisationId: org.id } });
+  if (existingQuotes === 0) {
+    const jracine = await db.customer.findFirst({ where: { organisationId: org.id, name: "James Ractliffe" } });
+    const sarahCustomer = await db.customer.findFirst({ where: { organisationId: org.id, name: "Sarah Whitfield" } });
+    const sarahEnquiry = await db.enquiry.findFirst({ where: { organisationId: org.id, name: "Sarah Whitfield", stage: "QUOTED" } });
+
+    if (jracine) {
+      await db.quote.create({
+        data: {
+          organisationId: org.id,
+          quoteNumber: "#Q-0001",
+          customerId: jracine.id,
+          status: "DRAFT",
+          scopeOfWorks: "Reseal ensuite shower tray and surrounding tiles.",
+          subtotal: 180,
+          vatApplied: false,
+          vatRatePercent: 0,
+          vatAmount: 0,
+          total: 180,
+          warrantyMonths: 12,
+          lineItems: {
+            create: [
+              { description: "Cut out and reseal — Dow 785+ White", quantity: 6, unit: "metres", unitPrice: 8, total: 48, sortOrder: 0 },
+              { description: "Labour", quantity: 3, unit: "hours", unitPrice: 44, total: 132, sortOrder: 1 },
+            ],
+          },
+        },
+      });
+    }
+
+    if (sarahCustomer) {
+      await db.quote.create({
+        data: {
+          organisationId: org.id,
+          quoteNumber: "#Q-0002",
+          customerId: sarahCustomer.id,
+          enquiryId: sarahEnquiry?.id,
+          status: "SENT",
+          scopeOfWorks: "Annual reseal of external window units and two expansion joints before winter.",
+          subtotal: 640,
+          vatApplied: false,
+          vatRatePercent: 0,
+          vatAmount: 0,
+          total: 640,
+          warrantyMonths: 12,
+          approvalToken: randomBytes(24).toString("hex"),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
+          lineItems: {
+            create: [
+              { description: "External window unit resealing — Dow 791 Weatherproofing", quantity: 40, unit: "metres", unitPrice: 9, total: 360, sortOrder: 0 },
+              { description: "Expansion joint resealing", quantity: 2, unit: "each", unitPrice: 60, total: 120, sortOrder: 1 },
+              { description: "Labour", quantity: 4, unit: "hours", unitPrice: 40, total: 160, sortOrder: 2 },
+            ],
+          },
+        },
+      });
+
+      await db.quote.create({
+        data: {
+          organisationId: org.id,
+          quoteNumber: "#Q-0003",
+          customerId: sarahCustomer.id,
+          status: "APPROVED",
+          scopeOfWorks: "Reseal Flat 2 kitchen and bathroom ahead of new tenancy.",
+          subtotal: 208.5,
+          vatApplied: false,
+          vatRatePercent: 0,
+          vatAmount: 0,
+          total: 208.5,
+          warrantyMonths: 12,
+          approvalToken: randomBytes(24).toString("hex"),
+          approvedAt: new Date("2025-11-02"),
+          approvedName: "Sarah Whitfield",
+          approvedIp: "203.0.113.42",
+          lineItems: {
+            create: [
+              { description: "Kitchen and bathroom reseal — Dow 785+ White", quantity: 12, unit: "metres", unitPrice: 8, total: 96, sortOrder: 0 },
+              { description: "Labour", quantity: 2.5, unit: "hours", unitPrice: 45, total: 112.5, sortOrder: 1 },
+            ],
+          },
+        },
+      });
+    }
+
+    await db.organisation.update({ where: { id: org.id }, data: { quoteCounter: 3 } });
+    console.log("Seeded sample quotes.");
   }
 
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);
