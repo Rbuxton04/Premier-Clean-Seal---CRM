@@ -2,8 +2,50 @@ import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
 import type { CustomerInput, PropertyInput } from "@/validators/customer";
 
-export async function listCustomers(query?: string, tagIds?: string[]) {
-  return db.customer.findMany({
+// Hand-written detail type so the included relations (esp. tags) are always
+// present in the signature, independent of Prisma's include inference across
+// the function boundary — which can otherwise collapse to the base model.
+export type CustomerWithDetail = {
+  id: string;
+  organisationId: string;
+  name: string;
+  company: string | null;
+  phone: string | null;
+  email: string | null;
+  notes: string | null;
+  marketingEmail: boolean;
+  marketingSms: boolean;
+  consentAt: Date | null;
+  totalSpend: unknown;
+  createdAt: Date;
+  updatedAt: Date;
+  deletedAt: Date | null;
+  properties: Array<{
+    id: string; addressLine1: string; addressLine2: string | null;
+    city: string | null; postcode: string; propertyType: string; notes: string | null;
+  }>;
+  tags: Array<{ id: string; name: string; colour: string }>;
+  timeline: Array<{ id: string; type: string; title: string; createdAt: Date }>;
+  communications: Array<{ id: string; direction: string; body: string; createdAt: Date }>;
+  jobs: Array<{ id: string; jobNumber: string; status: string; createdAt: Date }>;
+  _count: { jobs: number; quotes: number; enquiries: number };
+};
+
+export type CustomerListItem = {
+  id: string;
+  name: string;
+  company: string | null;
+  email: string | null;
+  phone: string | null;
+  totalSpend: unknown;
+  marketingEmail: boolean;
+  marketingSms: boolean;
+  tags: Array<{ id: string; name: string; colour: string }>;
+  _count: { properties: number; jobs: number };
+};
+
+export async function listCustomers(query?: string, tagIds?: string[]): Promise<CustomerListItem[]> {
+  const rows = await db.customer.findMany({
     where: {
       organisationId: ORG_ID,
       deletedAt: null,
@@ -26,10 +68,11 @@ export async function listCustomers(query?: string, tagIds?: string[]) {
     },
     orderBy: { createdAt: "desc" },
   });
+  return rows as CustomerListItem[];
 }
 
-export async function getCustomer(id: string) {
-  return db.customer.findFirst({
+export async function getCustomer(id: string): Promise<CustomerWithDetail | null> {
+  const customer = await db.customer.findFirst({
     where: { id, organisationId: ORG_ID, deletedAt: null },
     include: {
       properties: { orderBy: { createdAt: "asc" } },
@@ -40,6 +83,7 @@ export async function getCustomer(id: string) {
       _count: { select: { jobs: true, quotes: true, enquiries: true } },
     },
   });
+  return customer as CustomerWithDetail | null;
 }
 
 export async function createCustomer(data: CustomerInput) {

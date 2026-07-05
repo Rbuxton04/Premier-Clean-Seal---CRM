@@ -1,12 +1,15 @@
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
 
-export async function listTags() {
-  return db.tag.findMany({
+export type TagListItem = { id: string; name: string; colour: string; _count: { customers: number } };
+
+export async function listTags(): Promise<TagListItem[]> {
+  const rows = await db.tag.findMany({
     where: { organisationId: ORG_ID },
     include: { _count: { select: { customers: true } } },
     orderBy: { name: "asc" },
   });
+  return rows as TagListItem[];
 }
 
 export async function createTag(name: string, colour: string) {
