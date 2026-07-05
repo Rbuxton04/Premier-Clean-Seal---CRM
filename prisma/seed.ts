@@ -142,7 +142,7 @@ async function main() {
   if (existingEnquiries === 0) {
     const sarah = await db.customer.findFirst({ where: { organisationId: org.id, name: "Sarah Whitfield" } });
 
-    await db.enquiry.create({
+    const ogden = await db.enquiry.create({
       data: {
         organisationId: org.id,
         name: "Michael Ogden",
@@ -158,6 +158,34 @@ async function main() {
         stage: "NEW",
         priority: "NORMAL",
         kanbanOrder: 0,
+      },
+    });
+
+    // Sample AI analysis so the panel isn't empty on first view.
+    const jasmineWhiteForAi = await db.product.findFirst({ where: { organisationId: org.id, manufacturer: "Dow", colour: "Jasmine White" } });
+    await db.aIAnalysis.create({
+      data: {
+        enquiryId: ogden.id,
+        findings: {
+          mould: true,
+          missingSilicone: false,
+          crackedSilicone: true,
+          waterIngress: false,
+          tileGaps: false,
+          groutCondition: "fair",
+          cleanliness: "fair",
+          safetyIssues: [],
+        },
+        jobSummary: "Bathroom seal has failed around the bath — mould present and the existing bead is cracked in several places. Straightforward cut-out and reseal.",
+        estimatedWork: "Cut out and remove old silicone around the bath, treat mould, reseal in white with a sanitary-grade product.",
+        estimatedMetres: 9.5,
+        suggestedProducts: jasmineWhiteForAi ? [{ label: `${jasmineWhiteForAi.manufacturer} ${jasmineWhiteForAi.name}` }] : [{ label: "Dow 785+ Bacteria Resistant" }],
+        suggestedColours: ["Jasmine White"],
+        suggestedLabourHrs: 3.5,
+        quoteNotes: "Customer asked for white — Jasmine White is the closest sanitary-grade match in stock.",
+        confidence: 82,
+        model: "gpt-4o",
+        editedByUser: false,
       },
     });
 

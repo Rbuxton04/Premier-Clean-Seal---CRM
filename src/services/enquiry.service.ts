@@ -43,7 +43,21 @@ export type EnquiryDetail = {
   assignedToId: string | null;
   assignedTo: { id: string; name: string } | null;
   files: Array<{ id: string; url: string; thumbnailUrl: string | null; kind: string; mimeType: string }>;
-  aiAnalysis: { id: string } | null;
+  aiAnalysis: {
+    id: string;
+    findings: unknown;
+    jobSummary: string;
+    estimatedWork: string;
+    estimatedMetres: unknown;
+    suggestedProducts: unknown;
+    suggestedColours: string[];
+    suggestedLabourHrs: unknown;
+    quoteNotes: string | null;
+    confidence: number;
+    model: string;
+    editedByUser: boolean;
+    createdAt: Date;
+  } | null;
   customer: { id: string; name: string } | null;
   createdAt: Date;
   updatedAt: Date;
@@ -70,7 +84,23 @@ export async function getEnquiry(id: string): Promise<EnquiryDetail | null> {
     include: {
       assignedTo: { select: { id: true, name: true } },
       files: { select: { id: true, url: true, thumbnailUrl: true, kind: true, mimeType: true }, orderBy: { createdAt: "asc" } },
-      aiAnalysis: { select: { id: true } },
+      aiAnalysis: {
+        select: {
+          id: true,
+          findings: true,
+          jobSummary: true,
+          estimatedWork: true,
+          estimatedMetres: true,
+          suggestedProducts: true,
+          suggestedColours: true,
+          suggestedLabourHrs: true,
+          quoteNotes: true,
+          confidence: true,
+          model: true,
+          editedByUser: true,
+          createdAt: true,
+        },
+      },
       customer: { select: { id: true, name: true } },
     },
   });

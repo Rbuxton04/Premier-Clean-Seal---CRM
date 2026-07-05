@@ -1,16 +1,21 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Mail, Phone, MapPin, Sparkles, FileText } from "lucide-react";
+import { ArrowLeft, Mail, Phone, MapPin, FileText } from "lucide-react";
 import { getEnquiry, findMatchingCustomers, listAssigneeOptions } from "@/services/enquiry.service";
+import { listProductOptions } from "@/services/property.service";
+import { getPendingAnalysisTask } from "@/services/ai.service";
+import { isAiConfigured } from "@/lib/ai";
+import { isR2Configured } from "@/lib/storage/r2";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { formatGBP } from "@/lib/utils";
 import { workTypeLabels, contactMethodLabels, priorityLabels, enquiryStageLabels } from "@/validators/enquiry";
 import { propertyTypeLabels } from "@/validators/customer";
 import { MediaLightbox } from "./media-lightbox";
 import { EnquiryFieldsForm } from "./enquiry-fields-form";
+import { AiAnalysisPanel } from "./ai-analysis-panel";
+import type { Findings } from "@/lib/ai/provider";
 import { linkToCustomerAction, createCustomerFromEnquiryAction } from "../actions";
 
 export const dynamic = "force-dynamic";
@@ -19,10 +24,14 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
   const enquiry = await getEnquiry(params.id);
   if (!enquiry) notFound();
 
-  const [assignees, matchingCustomers] = await Promise.all([
+  const [assignees, matchingCustomers, products, pendingTask] = await Promise.all([
     listAssigneeOptions(),
     enquiry.customerId ? Promise.resolve([]) : findMatchingCustomers(enquiry.email, enquiry.phone),
+    listProductOptions(),
+    getPendingAnalysisTask(enquiry.id),
   ]);
+  const aiConfigured = isAiConfigured();
+  const photosAvailable = isR2Configured();
 
   return (
     <div className="space-y-6">
@@ -94,18 +103,23 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
             </CardContent>
           </Card>
 
-          <Card className="border-dashed opacity-80">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Sparkles className="h-4 w-4 text-brand-plum" /> AI analysis
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                AI analysis of the uploaded photos (suggested products, colours, estimated metres) runs in Milestone 3.
-              </p>
-            </CardContent>
-          </Card>
+          <AiAnalysisPanel
+            enquiryId={enquiry.id}
+            analysis={
+              enquiry.aiAnalysis
+                ? {
+                    ...enquiry.aiAnalysis,
+                    findings: enquiry.aiAnalysis.findings as Findings,
+                    suggestedProducts: enquiry.aiAnalysis.suggestedProducts as Array<{ label: string }>,
+                  }
+                : null
+            }
+            pendingTask={pendingTask}
+            configured={aiConfigured}
+            photosAvailable={photosAvailable}
+            hasPhotos={enquiry.files.some((f) => f.kind === "PHOTO")}
+            products={products}
+          />
         </div>
 
         <div className="space-y-6">
@@ -161,14 +175,16 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
             </CardContent>
           </Card>
 
-          <Card className="opacity-70">
-            <CardHeader><CardTitle className="text-base">Quote</CardTitle></CardHeader>
-            <CardContent>
-              <Button type="button" disabled className="w-full">
-                <FileText className="h-4 w-4" /> Create quote — available in Milestone 4
-              </Button>
-            </CardContent>
-          </Card>
+          {!enquiry.aiAnalysis && (
+            <Card className="opacity-70">
+              <CardHeader><CardTitle className="text-base">Quote</CardTitle></CardHeader>
+              <CardContent>
+                <Button type="button" disabled className="w-full">
+                  <FileText className="h-4 w-4" /> Create quote — available in Milestone 4
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </div>
       </div>
     </div>

@@ -2,7 +2,10 @@
 
 import { revalidatePath } from "next/cache";
 import { enquiryFieldsSchema, enquiryStages } from "@/validators/enquiry";
+import { aiAnalysisFieldsSchema } from "@/validators/ai-analysis";
 import * as EnquiryService from "@/services/enquiry.service";
+import * as AiService from "@/services/ai.service";
+import type { RunAnalysisResult } from "@/services/ai.service";
 
 export async function moveEnquiryAction(id: string, stage: string, index: number) {
   if (!(enquiryStages as readonly string[]).includes(stage)) throw new Error("Invalid stage");
@@ -54,4 +57,57 @@ export async function createCustomerFromEnquiryAction(enquiryId: string) {
   revalidatePath(`/enquiries/${enquiryId}`);
   revalidatePath("/enquiries");
   revalidatePath("/customers");
+}
+
+export async function runAiAnalysisAction(enquiryId: string): Promise<RunAnalysisResult> {
+  const result = await AiService.runEnquiryAnalysis(enquiryId);
+  revalidatePath(`/enquiries/${enquiryId}`);
+  return result;
+}
+
+export type AiFieldsFormState = { ok: boolean; message: string } | null;
+
+export async function updateAiAnalysisFieldsAction(enquiryId: string, _prev: AiFieldsFormState, formData: FormData): Promise<AiFieldsFormState> {
+  const parsed = aiAnalysisFieldsSchema.safeParse({
+    jobSummary: formData.get("jobSummary"),
+    estimatedWork: formData.get("estimatedWork"),
+    estimatedMetres: formData.get("estimatedMetres") || undefined,
+    suggestedLabourHrs: formData.get("suggestedLabourHrs") || undefined,
+    quoteNotes: formData.get("quoteNotes") || undefined,
+    suggestedColours: formData.getAll("suggestedColours").map(String).filter(Boolean),
+    suggestedProducts: formData.getAll("suggestedProducts").map(String).filter(Boolean),
+    mould: formData.get("mould") === "on",
+    missingSilicone: formData.get("missingSilicone") === "on",
+    crackedSilicone: formData.get("crackedSilicone") === "on",
+    waterIngress: formData.get("waterIngress") === "on",
+    tileGaps: formData.get("tileGaps") === "on",
+    groutCondition: formData.get("groutCondition") || undefined,
+    cleanliness: formData.get("cleanliness") || undefined,
+    safetyIssues: formData.get("safetyIssues") || undefined,
+  });
+  if (!parsed.success) return { ok: false, message: "Please fix the errors below." };
+
+  const d = parsed.data;
+  await AiService.updateAIAnalysisFields(enquiryId, {
+    jobSummary: d.jobSummary,
+    estimatedWork: d.estimatedWork,
+    estimatedMetres: d.estimatedMetres ?? null,
+    suggestedLabourHrs: d.suggestedLabourHrs ?? null,
+    quoteNotes: d.quoteNotes || null,
+    suggestedColours: d.suggestedColours,
+    suggestedProducts: d.suggestedProducts.map((label) => ({ label })),
+    findings: {
+      mould: d.mould,
+      missingSilicone: d.missingSilicone,
+      crackedSilicone: d.crackedSilicone,
+      waterIngress: d.waterIngress,
+      tileGaps: d.tileGaps,
+      groutCondition: d.groutCondition,
+      cleanliness: d.cleanliness,
+      safetyIssues: d.safetyIssues ? d.safetyIssues.split("\n").map((s) => s.trim()).filter(Boolean) : [],
+    },
+  });
+
+  revalidatePath(`/enquiries/${enquiryId}`);
+  return { ok: true, message: "Saved" };
 }
