@@ -1,13 +1,26 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import { useRouter } from "next/navigation";
 import { Send, FileDown, Wrench, Copy, Check } from "lucide-react";
 import { Button } from "@/components/ui/button";
-import { sendQuoteAction } from "../actions";
+import { sendQuoteAction, convertToJobAction } from "../actions";
 import type { SendQuoteResult } from "@/services/quote.service";
 
-export function QuoteActions({ quoteId, status, pdfHref }: { quoteId: string; status: string; pdfHref: string }) {
+export function QuoteActions({
+  quoteId,
+  status,
+  pdfHref,
+  existingJobId,
+}: {
+  quoteId: string;
+  status: string;
+  pdfHref: string;
+  existingJobId?: string | null;
+}) {
+  const router = useRouter();
   const [pending, startTransition] = useTransition();
+  const [convertPending, startConvertTransition] = useTransition();
   const [result, setResult] = useState<SendQuoteResult | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -27,9 +40,30 @@ export function QuoteActions({ quoteId, status, pdfHref }: { quoteId: string; st
             <FileDown className="h-3.5 w-3.5" /> Download PDF
           </a>
         </Button>
-        <Button type="button" size="sm" variant="outline" disabled className="opacity-70">
-          <Wrench className="h-3.5 w-3.5" /> Convert to job — Milestone 5
-        </Button>
+        {existingJobId ? (
+          <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/jobs/${existingJobId}`)}>
+            <Wrench className="h-3.5 w-3.5" /> View job
+          </Button>
+        ) : status === "APPROVED" ? (
+          <Button
+            type="button"
+            size="sm"
+            variant="outline"
+            disabled={convertPending}
+            onClick={() =>
+              startConvertTransition(async () => {
+                const { jobId } = await convertToJobAction(quoteId);
+                router.push(`/jobs/${jobId}`);
+              })
+            }
+          >
+            <Wrench className="h-3.5 w-3.5" /> {convertPending ? "Converting…" : "Convert to job"}
+          </Button>
+        ) : (
+          <Button type="button" size="sm" variant="outline" disabled className="opacity-70">
+            <Wrench className="h-3.5 w-3.5" /> Convert to job — needs an approved quote
+          </Button>
+        )}
       </div>
 
       {result && (

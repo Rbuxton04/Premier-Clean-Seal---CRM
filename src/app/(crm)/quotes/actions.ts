@@ -4,7 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { quoteFormSchema } from "@/validators/quote";
 import * as QuoteService from "@/services/quote.service";
+import * as JobService from "@/services/job.service";
 import type { SendQuoteResult } from "@/services/quote.service";
+import type { ConvertToJobResult } from "@/services/job.service";
 
 export type QuoteFormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -58,5 +60,12 @@ export async function sendQuoteAction(id: string): Promise<SendQuoteResult> {
   const result = await QuoteService.sendQuote(id);
   revalidatePath(`/quotes/${id}`);
   revalidatePath("/quotes");
+  return result;
+}
+
+export async function convertToJobAction(quoteId: string): Promise<ConvertToJobResult> {
+  const result = await JobService.convertQuoteToJob(quoteId);
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath("/jobs");
   return result;
 }

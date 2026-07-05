@@ -45,7 +45,7 @@ export default async function QuoteDetailPage({ params }: { params: { id: string
       <Card>
         <CardHeader><CardTitle className="text-base">Actions</CardTitle></CardHeader>
         <CardContent>
-          <QuoteActions quoteId={quote.id} status={quote.status} pdfHref={pdfHref} />
+          <QuoteActions quoteId={quote.id} status={quote.status} pdfHref={pdfHref} existingJobId={quote.job?.id} />
         </CardContent>
       </Card>
 

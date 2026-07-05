@@ -325,6 +325,141 @@ async function main() {
     console.log("Seeded sample quotes.");
   }
 
+  // Sample technicians (idempotent)
+  const existingTechnicians = await db.user.count({ where: { organisationId: org.id, role: "TECHNICIAN" } });
+  if (existingTechnicians === 0) {
+    await db.user.createMany({
+      data: [
+        { organisationId: org.id, name: "Roman", email: "roman@premiercleanandseal.co.uk", role: "TECHNICIAN" },
+        { organisationId: org.id, name: "Danny", email: "danny@premiercleanandseal.co.uk", role: "TECHNICIAN" },
+        { organisationId: org.id, name: "Mia", email: "mia@premiercleanandseal.co.uk", role: "TECHNICIAN" },
+      ],
+    });
+    console.log("Seeded sample technicians.");
+  }
+
+  // Sample jobs across statuses and days so the list and calendar aren't
+  // empty on first view. Converts the seeded APPROVED quote into a job to
+  // demonstrate that flow.
+  const existingJobs = await db.job.count({ where: { organisationId: org.id } });
+  if (existingJobs === 0) {
+    const roman = await db.user.findFirst({ where: { organisationId: org.id, name: "Roman" } });
+    const danny = await db.user.findFirst({ where: { organisationId: org.id, name: "Danny" } });
+    const mia = await db.user.findFirst({ where: { organisationId: org.id, name: "Mia" } });
+
+    const jracine = await db.customer.findFirst({ where: { organisationId: org.id, name: "James Ractliffe" } });
+    const brambleClose = jracine ? await db.property.findFirst({ where: { customerId: jracine.id, addressLine1: "14 Bramble Close" } }) : null;
+
+    const sarahCustomer = await db.customer.findFirst({ where: { organisationId: org.id, name: "Sarah Whitfield" } });
+    const standishgateFlat = sarahCustomer ? await db.property.findFirst({ where: { customerId: sarahCustomer.id, addressLine1: "Flat 2, 88 Standishgate" } }) : null;
+    const theOldMill = sarahCustomer ? await db.property.findFirst({ where: { customerId: sarahCustomer.id, addressLine1: "The Old Mill, Unit 4" } }) : null;
+
+    const approvedQuote = await db.quote.findFirst({ where: { organisationId: org.id, quoteNumber: "#Q-0003" } });
+
+    const today = new Date();
+    const daysFromNow = (n: number, hour = 9) => {
+      const d = new Date(today);
+      d.setDate(d.getDate() + n);
+      d.setHours(hour, 0, 0, 0);
+      return d;
+    };
+
+    let jobCounter = 0;
+
+    // Job 1: converted from the approved quote — demonstrates the M4 -> M5 flow.
+    if (approvedQuote && sarahCustomer) {
+      jobCounter += 1;
+      const jobNumber = `#J-000${jobCounter}`;
+      await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber,
+          customerId: sarahCustomer.id,
+          propertyId: standishgateFlat?.id,
+          quoteId: approvedQuote.id,
+          technicianId: danny?.id,
+          status: "BOOKED",
+          scheduledStart: daysFromNow(2),
+          scheduledEnd: daysFromNow(2, 11),
+          price: approvedQuote.total,
+          depositPaid: 0,
+          balanceDue: approvedQuote.total,
+          paymentStatus: "UNPAID",
+        },
+      });
+      await db.timelineEvent.create({
+        data: { customerId: sarahCustomer.id, type: "JOB_CREATED", title: `Job ${jobNumber} created from quote ${approvedQuote.quoteNumber}` },
+      });
+    }
+
+    // Job 2: manual booked job, scheduled this week
+    if (jracine) {
+      jobCounter += 1;
+      await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber: `#J-000${jobCounter}`,
+          customerId: jracine.id,
+          propertyId: brambleClose?.id,
+          technicianId: roman?.id,
+          status: "BOOKED",
+          scheduledStart: daysFromNow(1),
+          scheduledEnd: daysFromNow(1, 12),
+          price: 180,
+          depositPaid: 0,
+          balanceDue: 180,
+          paymentStatus: "UNPAID",
+          notes: "Ensuite shower tray reseal.",
+        },
+      });
+    }
+
+    // Job 3: unscheduled — sits in the calendar's unscheduled tray
+    if (sarahCustomer) {
+      jobCounter += 1;
+      await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber: `#J-000${jobCounter}`,
+          customerId: sarahCustomer.id,
+          propertyId: theOldMill?.id,
+          status: "BOOKED",
+          price: 320,
+          depositPaid: 0,
+          balanceDue: 320,
+          paymentStatus: "UNPAID",
+          notes: "Commercial unit — awaiting access booking.",
+        },
+      });
+    }
+
+    // Job 4: completed last week
+    if (jracine) {
+      jobCounter += 1;
+      await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber: `#J-000${jobCounter}`,
+          customerId: jracine.id,
+          propertyId: brambleClose?.id,
+          technicianId: mia?.id,
+          status: "COMPLETED",
+          scheduledStart: daysFromNow(-6),
+          scheduledEnd: daysFromNow(-6, 13),
+          actualStart: daysFromNow(-6),
+          actualEnd: daysFromNow(-6, 13),
+          price: 150,
+          depositPaid: 150,
+          balanceDue: 0,
+          paymentStatus: "PAID",
+        },
+      });
+    }
+
+    await db.organisation.update({ where: { id: org.id }, data: { jobCounter } });
+    console.log("Seeded sample jobs.");
+  }
+
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);
 }
 
