@@ -1,0 +1,62 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/*
+  Theme derived from the Premier Clean & Seal logo.
+  Light mode: near-white surfaces, slate text, plum primary.
+  Dark mode: the logo's own slate as the canvas.
+*/
+@layer base {
+  :root {
+    --background: 220 14% 98%;          /* warm off-white */
+    --foreground: 219 12% 20%;          /* slate ink */
+    --card: 0 0% 100%;
+    --card-foreground: 219 12% 20%;
+    --popover: 0 0% 100%;
+    --popover-foreground: 219 12% 20%;
+    --primary: 264 49% 26%;             /* plum #3C2263 */
+    --primary-foreground: 0 0% 98%;
+    --secondary: 219 10% 93%;
+    --secondary-foreground: 219 12% 25%;
+    --muted: 219 10% 94%;
+    --muted-foreground: 219 9% 45%;
+    --accent: 263 43% 94%;              /* plum-soft */
+    --accent-foreground: 264 49% 26%;
+    --destructive: 0 72% 45%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 219 12% 89%;
+    --input: 219 12% 86%;
+    --ring: 264 49% 40%;
+    --radius: 0.625rem;
+  }
+
+  .dark {
+    --background: 219 10% 16%;          /* slate-ink */
+    --foreground: 0 0% 85%;             /* logo silver */
+    --card: 219 10% 20%;
+    --card-foreground: 0 0% 85%;
+    --popover: 219 10% 20%;
+    --popover-foreground: 0 0% 85%;
+    --primary: 263 41% 62%;             /* plum-bright for contrast on dark */
+    --primary-foreground: 264 49% 12%;
+    --secondary: 219 10% 26%;
+    --secondary-foreground: 0 0% 85%;
+    --muted: 219 10% 24%;
+    --muted-foreground: 219 8% 62%;
+    --accent: 264 30% 30%;
+    --accent-foreground: 0 0% 92%;
+    --destructive: 0 62% 50%;
+    --destructive-foreground: 0 0% 98%;
+    --border: 219 10% 28%;
+    --input: 219 10% 30%;
+    --ring: 263 41% 62%;
+  }
+
+  * { @apply border-border; }
+  body { @apply bg-background text-foreground antialiased; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .animate-swoosh-in { animation: none; stroke-dashoffset: 0 !important; }
+}
