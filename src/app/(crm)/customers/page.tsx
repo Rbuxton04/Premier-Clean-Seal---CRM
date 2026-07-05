@@ -38,7 +38,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: { 
         </div>
       </div>
 
-      {!dbError && <FilterBar tags={tags.map((t: (typeof tags)[number]) => ({ id: t.id, name: t.name, colour: t.colour }))} />}
+      {!dbError && <FilterBar tags={tags.map((t) => ({ id: t.id, name: t.name, colour: t.colour }))} />}
 
       {dbError ? (
         <Badge variant="warning">Database not connected.</Badge>
@@ -61,7 +61,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: { 
               </TableRow>
             </TableHeader>
             <TableBody>
-              {customers.map((c: (typeof customers)[number]) => (
+              {customers.map((c) => (
                 <TableRow key={c.id}>
                   <TableCell className="font-medium">
                     <Link href={`/customers/${c.id}`} className="hover:text-primary">{c.name}</Link>
@@ -69,7 +69,7 @@ export default async function CustomersPage({ searchParams }: { searchParams: { 
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
-                      {c.tags.map((t: (typeof c.tags)[number]) => (
+                      {c.tags.map((t) => (
                         <span key={t.id} className="rounded-full px-2 py-0.5 text-[10px] font-medium text-white" style={{ backgroundColor: t.colour }}>{t.name}</span>
                       ))}
                       {c.tags.length === 0 && <span className="text-xs text-muted-foreground">—</span>}

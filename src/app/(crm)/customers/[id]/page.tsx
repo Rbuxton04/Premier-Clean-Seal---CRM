@@ -16,7 +16,7 @@ import { TagsPanel } from "./tags-panel";
 export const dynamic = "force-dynamic";
 
 export default async function CustomerProfilePage({ params }: { params: { id: string } }) {
-  const customer = await getCustomer(params.id).catch(() => null);
+  const customer = await getCustomer(params.id);
   if (!customer) notFound();
   const allTags = await listTags().catch(() => []);
 
@@ -36,7 +36,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
         <div className="flex flex-wrap items-center gap-3">
           <h1 className="font-display text-2xl font-semibold tracking-tight">{customer.name}</h1>
           {customer.company && <Badge variant="secondary"><Building2 className="mr-1 h-3 w-3" />{customer.company}</Badge>}
-          {customer.tags.map((t: (typeof customer.tags)[number]) => (
+          {customer.tags.map((t) => (
             <span key={t.id} className="rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: t.colour }}>{t.name}</span>
           ))}
           {customer.marketingEmail && <Badge variant="secondary">Email opt-in</Badge>}
@@ -75,7 +75,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
               {
                 id: "tags",
                 label: `Tags (${customer.tags.length})`,
-                content: <TagsPanel customerId={customer.id} allTags={allTags.map((t: (typeof allTags)[number]) => ({ id: t.id, name: t.name, colour: t.colour }))} assigned={customer.tags.map((t: (typeof customer.tags)[number]) => t.id)} />,
+                content: <TagsPanel customerId={customer.id} allTags={allTags.map((t) => ({ id: t.id, name: t.name, colour: t.colour }))} assigned={customer.tags.map((t) => t.id)} />,
               },
               { id: "timeline", label: "Timeline", content: <Timeline events={customer.timeline as any} /> },
               {
