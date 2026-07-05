@@ -43,6 +43,7 @@ model Organisation {
   products     Product[]
   campaigns    Campaign[]
   reminders    MarketingReminder[]
+  tags         Tag[]
   auditLogs    AuditLog[]
   permissions  Permission[]
   mediaFiles   MediaFile[]
@@ -112,12 +113,25 @@ model Customer {
   reminders      MarketingReminder[]
   portalTokens   PortalToken[]
   mediaFiles     MediaFile[]
+  tags           Tag[]           @relation("CustomerTags")
 
   createdAt DateTime  @default(now())
   updatedAt DateTime  @updatedAt
   deletedAt DateTime?
 
   @@index([organisationId, name])
+}
+
+model Tag {
+  id             String   @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  name           String
+  colour         String   @default("#3C2263") // hex; shown as a chip
+  customers      Customer[] @relation("CustomerTags")
+  createdAt      DateTime @default(now())
+
+  @@unique([organisationId, name])
 }
 
 enum PropertyType {
