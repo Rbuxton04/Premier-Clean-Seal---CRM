@@ -156,8 +156,31 @@ model Property {
   createdAt    DateTime @default(now())
   jobs         Job[]
   enquiries    Enquiry[]
+  workLogEntries PropertyWorkLog[]
 
   @@index([postcode])
+}
+
+// Per-property history of sealant work carried out — independent of the
+// (not yet built) Jobs module so repeat-business lookups work today.
+// Once Jobs/MaterialUsage are live for scheduled work, this remains the
+// durable record of what was actually installed and where.
+model PropertyWorkLog {
+  id           String            @id @default(cuid())
+  propertyId   String
+  property     Property          @relation(fields: [propertyId], references: [id], onDelete: Cascade)
+  description  String
+  productId    String?
+  product      Product?          @relation(fields: [productId], references: [id])
+  productText  String
+  colour       String
+  area         ApplicationArea?
+  batchNumber  String?
+  completedAt  DateTime
+  photos       MediaFile[]
+  createdAt    DateTime          @default(now())
+
+  @@index([propertyId, completedAt])
 }
 
 // ---------------------------------------------------------------------------
@@ -401,6 +424,7 @@ model Product {
   supplier       String?
   unitCost       Decimal? @db.Decimal(10, 2)
   usages         MaterialUsage[]
+  workLogEntries PropertyWorkLog[]
 
   @@index([organisationId, manufacturer, name, colour])
 }
@@ -409,6 +433,7 @@ enum ApplicationArea {
   INTERNAL
   EXTERNAL
   BATHROOM
+  ENSUITE
   KITCHEN
   WINDOW
   EXPANSION_JOINT
@@ -474,6 +499,8 @@ model MediaFile {
   sizeBytes      Int    @default(0)
   pairedWithId   String? // links BEFORE <-> AFTER for sliders
   uploadedById   String?
+  workLogId      String?
+  workLog        PropertyWorkLog? @relation(fields: [workLogId], references: [id])
   createdAt      DateTime @default(now())
 }
 

@@ -23,6 +23,11 @@ export type CustomerWithDetail = {
   properties: Array<{
     id: string; addressLine1: string; addressLine2: string | null;
     city: string | null; postcode: string; propertyType: string; notes: string | null;
+    workLogEntries: Array<{
+      id: string; description: string; productId: string | null; productText: string;
+      colour: string; area: string | null; batchNumber: string | null; completedAt: Date;
+      photos: Array<{ id: string; url: string; thumbnailUrl: string | null }>;
+    }>;
   }>;
   tags: Array<{ id: string; name: string; colour: string }>;
   timeline: Array<{ id: string; type: string; title: string; createdAt: Date }>;
@@ -75,7 +80,10 @@ export async function getCustomer(id: string): Promise<CustomerWithDetail | null
   const customer = await db.customer.findFirst({
     where: { id, organisationId: ORG_ID, deletedAt: null },
     include: {
-      properties: { orderBy: { createdAt: "asc" } },
+      properties: {
+        orderBy: { createdAt: "asc" },
+        include: { workLogEntries: { orderBy: { completedAt: "desc" }, include: { photos: true } } },
+      },
       tags: { orderBy: { name: "asc" } },
       timeline: { orderBy: { createdAt: "desc" }, take: 50 },
       communications: { orderBy: { createdAt: "desc" }, take: 50 },

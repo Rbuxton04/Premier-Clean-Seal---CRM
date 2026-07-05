@@ -3,6 +3,7 @@ import { notFound } from "next/navigation";
 import { ArrowLeft, Mail, Phone, Building2 } from "lucide-react";
 import { getCustomer } from "@/services/customer.service";
 import { listTags } from "@/services/tag.service";
+import { listProductOptions } from "@/services/property.service";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -19,6 +20,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
   const customer = await getCustomer(params.id);
   if (!customer) notFound();
   const allTags = await listTags().catch(() => []);
+  const products = await listProductOptions().catch(() => []);
 
   const stat = (label: string, value: string) => (
     <div className="rounded-lg border bg-card px-4 py-3">
@@ -70,7 +72,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
               {
                 id: "properties",
                 label: `Properties (${customer.properties.length})`,
-                content: <PropertiesPanel customerId={customer.id} properties={customer.properties as any} />,
+                content: <PropertiesPanel customerId={customer.id} properties={customer.properties as any} products={products} />,
               },
               {
                 id: "tags",

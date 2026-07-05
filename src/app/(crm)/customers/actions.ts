@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { customerSchema, propertySchema } from "@/validators/customer";
+import { workLogSchema } from "@/validators/work-log";
 import * as CustomerService from "@/services/customer.service";
+import * as PropertyService from "@/services/property.service";
 
 export type FormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -65,6 +67,28 @@ export async function addPropertyAction(customerId: string, _prev: FormState, fo
 
 export async function deletePropertyAction(customerId: string, propertyId: string) {
   await CustomerService.deleteProperty(propertyId);
+  revalidatePath(`/customers/${customerId}`);
+}
+
+export async function addWorkLogAction(customerId: string, propertyId: string, _prev: FormState, formData: FormData): Promise<FormState> {
+  const parsed = workLogSchema.safeParse({
+    description: formData.get("description"),
+    productId: formData.get("productId") || undefined,
+    productText: formData.get("productText"),
+    colour: formData.get("colour"),
+    area: formData.get("area") || undefined,
+    batchNumber: formData.get("batchNumber") || undefined,
+    completedAt: formData.get("completedAt"),
+  });
+  if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
+
+  await PropertyService.addWorkLogEntry(customerId, propertyId, parsed.data);
+  revalidatePath(`/customers/${customerId}`);
+  return { ok: true, message: "Work log entry added" };
+}
+
+export async function deleteWorkLogAction(customerId: string, workLogId: string) {
+  await PropertyService.deleteWorkLogEntry(workLogId);
   revalidatePath(`/customers/${customerId}`);
 }
 

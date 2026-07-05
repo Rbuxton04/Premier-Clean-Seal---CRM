@@ -93,6 +93,26 @@ async function main() {
       ],
     });
 
+    // Sample work log entry so the feature isn't empty on first look.
+    const brambleClose = await db.property.findFirst({ where: { customerId: jracine.id, addressLine1: "14 Bramble Close" } });
+    const jasmineWhite = await db.product.findFirst({ where: { organisationId: org.id, manufacturer: "Dow", colour: "Jasmine White" } });
+    if (brambleClose) {
+      await db.propertyWorkLog.create({
+        data: {
+          propertyId: brambleClose.id,
+          description: "1 bathroom — cut out & reseal",
+          productId: jasmineWhite?.id,
+          productText: jasmineWhite ? `${jasmineWhite.manufacturer} ${jasmineWhite.name}` : "Dow 785+ Bacteria Resistant",
+          colour: "Jasmine White",
+          area: "BATHROOM",
+          completedAt: new Date("2025-03-14"),
+        },
+      });
+      await db.timelineEvent.create({
+        data: { customerId: jracine.id, type: "WORK_LOG_ADDED", title: "Work logged at 14 Bramble Close: 1 bathroom — Jasmine White" },
+      });
+    }
+
     await db.customer.create({
       data: {
         organisationId: org.id,
