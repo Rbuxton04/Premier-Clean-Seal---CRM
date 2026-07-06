@@ -39,9 +39,14 @@ export const materialUsageSchema = z.object({
 });
 export type MaterialUsageInput = z.infer<typeof materialUsageSchema>;
 
+// Photos/signature are uploaded directly from the browser to R2 (see
+// completion-wizard.tsx) before this form is submitted — the server action
+// only ever receives the resulting R2 URLs, never raw file bytes.
 export const completionPhotoSchema = z.object({
   category: z.enum(photoCategories),
-  dataUrl: z.string().min(1),
+  url: z.string().min(1),
+  mimeType: z.string().min(1).default("image/jpeg"),
+  sizeBytes: z.coerce.number().int().nonnegative().default(0),
 });
 export type CompletionPhotoInput = z.infer<typeof completionPhotoSchema>;
 
@@ -52,7 +57,7 @@ export const completionFormSchema = z.object({
   actualEnd: z.coerce.date().optional(),
   completionNotes: z.string().optional(),
   satisfactionRating: z.coerce.number().int().min(1).max(5).optional(),
-  signatureDataUrl: z.string().optional(),
+  signatureUrl: z.string().optional(),
   photos: z.array(completionPhotoSchema).optional(),
 });
 export type CompletionInput = z.infer<typeof completionFormSchema>;

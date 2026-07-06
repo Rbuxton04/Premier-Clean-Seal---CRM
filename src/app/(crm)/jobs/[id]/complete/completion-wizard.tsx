@@ -16,7 +16,7 @@ import type { ProductOption } from "@/services/property.service";
 import { finishJobAction } from "./actions";
 import { SignaturePad } from "./signature-pad";
 
-function resizeImageFile(file: File, maxDim = 1600, quality = 0.82): Promise<string> {
+function resizeImageFile(file: File, maxDim = 1600, quality = 0.82): Promise<Blob> {
   return new Promise((resolve, reject) => {
     const reader = new FileReader();
     reader.onload = () => {
@@ -34,7 +34,7 @@ function resizeImageFile(file: File, maxDim = 1600, quality = 0.82): Promise<str
         const ctx = canvas.getContext("2d");
         if (!ctx) return reject(new Error("Canvas not supported"));
         ctx.drawImage(img, 0, 0, width, height);
-        resolve(canvas.toDataURL("image/jpeg", quality));
+        canvas.toBlob((blob) => (blob ? resolve(blob) : reject(new Error("Could not encode photo"))), "image/jpeg", quality);
       };
       img.onerror = reject;
       img.src = reader.result as string;
@@ -42,6 +42,26 @@ function resizeImageFile(file: File, maxDim = 1600, quality = 0.82): Promise<str
     reader.onerror = reject;
     reader.readAsDataURL(file);
   });
+}
+
+/** Uploads a single file/blob directly to R2 via the presign endpoint — same
+ * pattern as the public request-quote form. Returns null (never throws) if
+ * R2 isn't configured or the upload fails, so callers can skip gracefully. */
+async function uploadToR2(blob: Blob, filename: string, contentType: string): Promise<{ url: string; sizeBytes: number } | null> {
+  try {
+    const presignRes = await fetch("/api/uploads/presign", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ filename, contentType, folder: "jobs" }),
+    });
+    const presign = await presignRes.json();
+    if (!presign.configured) return null;
+
+    await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: blob });
+    return { url: presign.publicUrl, sizeBytes: blob.size };
+  } catch {
+    return null;
+  }
 }
 
 type MaterialRow = {
@@ -60,7 +80,7 @@ function emptyMaterial(): MaterialRow {
   return { comboText: "", productText: "", colour: "", applicationArea: "BATHROOM", batchNumber: "", quantityUsed: "1", unit: "tubes", cost: "" };
 }
 
-type PhotoItem = { category: (typeof photoCategories)[number]; dataUrl: string; name: string };
+type PhotoItem = { category: (typeof photoCategories)[number]; blob: Blob; previewUrl: string; name: string };
 
 function toDatetimeLocal(d: Date | null): string {
   if (!d) return "";
@@ -87,9 +107,10 @@ export function CompletionWizard({
   const [actualEnd, setActualEnd] = useState(toDatetimeLocal(new Date()));
   const [completionNotes, setCompletionNotes] = useState("");
   const [rating, setRating] = useState(0);
-  const [signatureDataUrl, setSignatureDataUrl] = useState<string | null>(null);
+  const [signatureBlob, setSignatureBlob] = useState<Blob | null>(null);
   const [photos, setPhotos] = useState<PhotoItem[]>([]);
   const [photoBusy, setPhotoBusy] = useState(false);
+  const [uploading, setUploading] = useState(false);
 
   const productOptions: ComboboxOption[] = products.map((p) => ({
     value: p.id,
@@ -111,8 +132,8 @@ export function CompletionWizard({
     try {
       const items: PhotoItem[] = [];
       for (const file of Array.from(files)) {
-        const dataUrl = await resizeImageFile(file);
-        items.push({ category, dataUrl, name: file.name });
+        const blob = await resizeImageFile(file);
+        items.push({ category, blob, previewUrl: URL.createObjectURL(blob), name: file.name });
       }
       setPhotos((prev) => [...prev, ...items]);
     } finally {
@@ -124,7 +145,7 @@ export function CompletionWizard({
     setPhotos((prev) => prev.filter((_, i) => i !== index));
   }
 
-  function submit() {
+  async function submit() {
     setError(null);
 
     for (const m of materials) {
@@ -138,35 +159,53 @@ export function CompletionWizard({
       }
     }
 
-    const input: CompletionInput = {
-      materials: materials.map((m) => ({
-        productId: m.productId || undefined,
-        productText: m.productText.trim(),
-        colour: m.colour.trim(),
-        applicationArea: m.applicationArea,
-        batchNumber: m.batchNumber.trim() || undefined,
-        quantityUsed: Number(m.quantityUsed),
-        unit: m.unit.trim() || "tubes",
-        cost: m.cost ? Number(m.cost) : undefined,
-      })),
-      metresInstalled: metresInstalled ? Number(metresInstalled) : undefined,
-      actualStart: actualStart ? new Date(actualStart) : undefined,
-      actualEnd: actualEnd ? new Date(actualEnd) : undefined,
-      completionNotes: completionNotes.trim() || undefined,
-      satisfactionRating: rating > 0 ? rating : undefined,
-      signatureDataUrl: signatureDataUrl ?? undefined,
-      photos: photos.length > 0 ? photos.map((p) => ({ category: p.category, dataUrl: p.dataUrl })) : undefined,
-    };
+    setUploading(true);
+    try {
+      // Photos and the signature upload straight from the browser to R2 —
+      // the server action below only ever sees the resulting URLs.
+      const uploadedPhotos = (
+        await Promise.all(
+          photos.map(async (p, i) => {
+            const uploaded = await uploadToR2(p.blob, `${p.category.toLowerCase()}-${i}-${p.name || "photo.jpg"}`, "image/jpeg");
+            return uploaded ? { category: p.category, url: uploaded.url, mimeType: "image/jpeg", sizeBytes: uploaded.sizeBytes } : null;
+          })
+        )
+      ).filter((p): p is NonNullable<typeof p> => p !== null);
 
-    startTransition(async () => {
-      const result = await finishJobAction(jobId, input);
-      if (!result.ok) {
-        setError(result.message);
-        return;
-      }
-      router.push(`/jobs/${result.jobId}`);
-      router.refresh();
-    });
+      const uploadedSignature = signatureBlob ? await uploadToR2(signatureBlob, "signature.png", "image/png") : null;
+
+      const input: CompletionInput = {
+        materials: materials.map((m) => ({
+          productId: m.productId || undefined,
+          productText: m.productText.trim(),
+          colour: m.colour.trim(),
+          applicationArea: m.applicationArea,
+          batchNumber: m.batchNumber.trim() || undefined,
+          quantityUsed: Number(m.quantityUsed),
+          unit: m.unit.trim() || "tubes",
+          cost: m.cost ? Number(m.cost) : undefined,
+        })),
+        metresInstalled: metresInstalled ? Number(metresInstalled) : undefined,
+        actualStart: actualStart ? new Date(actualStart) : undefined,
+        actualEnd: actualEnd ? new Date(actualEnd) : undefined,
+        completionNotes: completionNotes.trim() || undefined,
+        satisfactionRating: rating > 0 ? rating : undefined,
+        signatureUrl: uploadedSignature?.url,
+        photos: uploadedPhotos.length > 0 ? uploadedPhotos : undefined,
+      };
+
+      startTransition(async () => {
+        const result = await finishJobAction(jobId, input);
+        if (!result.ok) {
+          setError(result.message);
+          return;
+        }
+        router.push(`/jobs/${result.jobId}`);
+        router.refresh();
+      });
+    } finally {
+      setUploading(false);
+    }
   }
 
   return (
@@ -290,7 +329,7 @@ export function CompletionWizard({
                     p.category === cat ? (
                       <div key={i} className="relative h-16 w-16 overflow-hidden rounded-md border">
                         {/* eslint-disable-next-line @next/next/no-img-element */}
-                        <img src={p.dataUrl} alt={p.name} className="h-full w-full object-cover" />
+                        <img src={p.previewUrl} alt={p.name} className="h-full w-full object-cover" />
                         <button
                           type="button"
                           onClick={() => removePhoto(i)}
@@ -315,7 +354,7 @@ export function CompletionWizard({
           <CardTitle className="text-base">Customer signature</CardTitle>
         </CardHeader>
         <CardContent>
-          <SignaturePad onChange={setSignatureDataUrl} />
+          <SignaturePad onChange={setSignatureBlob} />
         </CardContent>
       </Card>
 
@@ -336,8 +375,8 @@ export function CompletionWizard({
 
       {error && <p className="text-sm text-destructive">{error}</p>}
 
-      <Button type="button" size="lg" className="w-full" disabled={pending || photoBusy} onClick={submit}>
-        {pending ? "Generating…" : "Finish & generate"}
+      <Button type="button" size="lg" className="w-full" disabled={pending || photoBusy || uploading} onClick={submit}>
+        {uploading ? "Uploading photos…" : pending ? "Generating…" : "Finish & generate"}
       </Button>
     </div>
   );

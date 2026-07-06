@@ -44,12 +44,13 @@ function publicUrlFor(key: string): string {
   return `https://${process.env.R2_ACCOUNT_ID}.r2.cloudflarestorage.com/${bucket()}/${key}`;
 }
 
-export type PresignRequest = { filename: string; contentType: string };
+export type PresignRequest = { filename: string; contentType: string; folder?: string };
 export type PresignResult = { uploadUrl: string; publicUrl: string };
 
 /** Mints a short-lived presigned PUT URL so the browser can upload directly to R2. */
 export async function presignUpload(req: PresignRequest): Promise<PresignResult> {
-  const key = `uploads/${Date.now()}-${req.filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
+  const folder = (req.folder ?? "uploads").replace(/[^a-zA-Z0-9/_-]/g, "_");
+  const key = `${folder}/${Date.now()}-${req.filename.replace(/[^a-zA-Z0-9._-]/g, "_")}`;
   const command = new PutObjectCommand({ Bucket: bucket(), Key: key, ContentType: req.contentType });
   const uploadUrl = await getSignedUrl(getClient(), command, { expiresIn: 300 });
   return { uploadUrl, publicUrl: publicUrlFor(key) };

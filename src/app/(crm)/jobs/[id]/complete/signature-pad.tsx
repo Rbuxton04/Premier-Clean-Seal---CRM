@@ -3,7 +3,7 @@
 import { useRef } from "react";
 import { Button } from "@/components/ui/button";
 
-export function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) => void }) {
+export function SignaturePad({ onChange }: { onChange: (blob: Blob | null) => void }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const drawing = useRef(false);
   const hasDrawn = useRef(false);
@@ -42,7 +42,11 @@ export function SignaturePad({ onChange }: { onChange: (dataUrl: string | null) 
     if (!drawing.current) return;
     drawing.current = false;
     const canvas = canvasRef.current!;
-    onChange(hasDrawn.current ? canvas.toDataURL("image/png") : null);
+    if (!hasDrawn.current) {
+      onChange(null);
+      return;
+    }
+    canvas.toBlob((blob) => onChange(blob), "image/png");
   }
 
   function clear() {

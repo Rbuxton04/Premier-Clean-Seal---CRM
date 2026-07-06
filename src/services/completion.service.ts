@@ -13,12 +13,6 @@ function addMonths(d: Date, months: number): Date {
   return result;
 }
 
-function bufferFromDataUrl(dataUrl: string): { buffer: Buffer; contentType: string } {
-  const match = dataUrl.match(/^data:([^;]+);base64,(.*)$/);
-  if (!match) throw new Error("Invalid image data URL");
-  return { buffer: Buffer.from(match[2], "base64"), contentType: match[1] };
-}
-
 /** Finds a matching Product row, or creates one (manufacturer "Custom") for
  * a free-typed colour that isn't in the catalogue yet — so it's reusable
  * next time too. */
@@ -40,7 +34,6 @@ export type FinishJobResult = {
   invoiceId: string;
   invoiceNumber: string;
   photosSaved: number;
-  photosSkipped: number;
   signatureSaved: boolean;
 };
 
@@ -48,8 +41,9 @@ export type FinishJobResult = {
  * The Milestone 6 "Finish & generate" action: marks the job completed and
  * creates everything downstream of that in one place — materials, warranty +
  * certificate, invoice, the property work-log entry, the next marketing
- * reminder, and the timeline trail. Photo/signature uploads are best-effort
- * against the R2 seam (see lib/storage/r2.ts) and never block completion.
+ * reminder, and the timeline trail. Photos and the signature are already
+ * uploaded to R2 by the browser (see completion-wizard.tsx) by the time this
+ * runs — this just records the resulting URLs as MediaFile rows.
  */
 export async function finishJob(jobId: string, input: CompletionInput): Promise<FinishJobResult> {
   const job = await db.job.findUniqueOrThrow({
@@ -75,36 +69,28 @@ export async function finishJob(jobId: string, input: CompletionInput): Promise<
     })),
   });
 
-  let signatureUrl: string | null = null;
-  if (input.signatureDataUrl && isR2Configured()) {
-    try {
-      const { buffer, contentType } = bufferFromDataUrl(input.signatureDataUrl);
-      signatureUrl = await uploadBuffer(`jobs/${job.jobNumber}/signature-${Date.now()}.png`, buffer, contentType);
-      await db.mediaFile.create({
-        data: { organisationId: ORG_ID, jobId, customerId: job.customerId, kind: "SIGNATURE", url: signatureUrl, mimeType: contentType, sizeBytes: buffer.length },
-      });
-    } catch {
-      signatureUrl = null;
-    }
+  const signatureUrl: string | null = input.signatureUrl ?? null;
+  if (signatureUrl) {
+    await db.mediaFile.create({
+      data: { organisationId: ORG_ID, jobId, customerId: job.customerId, kind: "SIGNATURE", url: signatureUrl, mimeType: "image/png", sizeBytes: 0 },
+    });
   }
 
   let photosSaved = 0;
-  let photosSkipped = 0;
   for (const photo of input.photos ?? []) {
-    if (!isR2Configured()) {
-      photosSkipped++;
-      continue;
-    }
-    try {
-      const { buffer, contentType } = bufferFromDataUrl(photo.dataUrl);
-      const url = await uploadBuffer(`jobs/${job.jobNumber}/${photo.category.toLowerCase()}-${Date.now()}-${photosSaved}.jpg`, buffer, contentType);
-      await db.mediaFile.create({
-        data: { organisationId: ORG_ID, jobId, customerId: job.customerId, kind: "PHOTO", category: photo.category, url, mimeType: contentType, sizeBytes: buffer.length },
-      });
-      photosSaved++;
-    } catch {
-      photosSkipped++;
-    }
+    await db.mediaFile.create({
+      data: {
+        organisationId: ORG_ID,
+        jobId,
+        customerId: job.customerId,
+        kind: "PHOTO",
+        category: photo.category,
+        url: photo.url,
+        mimeType: photo.mimeType,
+        sizeBytes: photo.sizeBytes,
+      },
+    });
+    photosSaved++;
   }
 
   await db.job.update({
@@ -247,7 +233,6 @@ export async function finishJob(jobId: string, input: CompletionInput): Promise<
     invoiceId: invoice.id,
     invoiceNumber,
     photosSaved,
-    photosSkipped,
     signatureSaved: Boolean(signatureUrl),
   };
 }
