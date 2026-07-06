@@ -249,7 +249,7 @@ async function main() {
           organisationId: org.id,
           quoteNumber: "#Q-0001",
           customerId: jracine.id,
-          status: "DRAFT",
+          status: "SENT",
           scopeOfWorks: "Reseal ensuite shower tray and surrounding tiles.",
           subtotal: 180,
           vatApplied: false,
@@ -257,6 +257,10 @@ async function main() {
           vatAmount: 0,
           total: 180,
           warrantyMonths: 12,
+          // SENT (not DRAFT) so the seeded customer portal has a quote
+          // waiting for approval — see the Milestone 11 portal token below.
+          approvalToken: randomBytes(24).toString("hex"),
+          expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
           lineItems: {
             create: [
               { description: "Cut out and reseal — Dow 785+ White", quantity: 6, unit: "metres", unitPrice: 8, total: 48, sortOrder: 0 },
@@ -550,6 +554,8 @@ async function main() {
           url: placeholderImage("BEFORE", "#58606B"),
           mimeType: "image/svg+xml",
           sizeBytes: 0,
+          // Shared so the Milestone 11 seeded portal token has a before/after to show.
+          sharedToPortal: true,
         },
       });
       const afterPhoto = await db.mediaFile.create({
@@ -562,6 +568,7 @@ async function main() {
           url: placeholderImage("AFTER", "#3C2263"),
           mimeType: "image/svg+xml",
           sizeBytes: 0,
+          sharedToPortal: true,
         },
       });
       await db.mediaFile.update({ where: { id: beforePhoto.id }, data: { pairedWithId: afterPhoto.id } });
@@ -740,6 +747,26 @@ async function main() {
       },
     });
     console.log("Seeded sample insight report.");
+  }
+
+  // Milestone 11: a stable portal token for James Ractliffe so the customer
+  // portal can be tested end-to-end (he already has a warranty, an invoice,
+  // a shared before/after pair, and now a SENT quote awaiting approval).
+  const jracineForPortal = await db.customer.findFirst({ where: { organisationId: org.id, name: "James Ractliffe" } });
+  if (jracineForPortal) {
+    const existingPortalToken = await db.portalToken.findFirst({
+      where: { customerId: jracineForPortal.id, scope: { has: "portal" } },
+    });
+    if (!existingPortalToken) {
+      const portalToken = "demo-portal-token-james-ractliffe";
+      const farFuture = new Date();
+      farFuture.setFullYear(farFuture.getFullYear() + 1);
+      await db.portalToken.create({
+        data: { customerId: jracineForPortal.id, token: portalToken, scope: ["portal"], expiresAt: farFuture },
+      });
+      const appUrl = process.env.APP_URL ?? "http://localhost:3000";
+      console.log(`Seeded customer portal token. Test portal URL: ${appUrl}/portal/${portalToken}`);
+    }
   }
 
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);

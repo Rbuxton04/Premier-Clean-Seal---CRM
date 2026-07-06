@@ -502,7 +502,11 @@ export async function resubscribeEmailByToken(token: string): Promise<{ ok: bool
 // Rebooking — the page a reminder's book link lands on
 // ---------------------------------------------------------------------------
 
-export async function createRebookingEnquiry(customerId: string, data: RebookingRequestInput): Promise<{ enquiryId: string }> {
+export async function createRebookingEnquiry(
+  customerId: string,
+  data: RebookingRequestInput,
+  source = "marketing reminder"
+): Promise<{ enquiryId: string }> {
   const customer = await db.customer.findUniqueOrThrow({ where: { id: customerId } });
   const property = await db.property.findFirstOrThrow({ where: { id: data.propertyId, customerId } });
 
@@ -530,7 +534,7 @@ export async function createRebookingEnquiry(customerId: string, data: Rebooking
   });
 
   await db.timelineEvent.create({
-    data: { customerId, type: "ENQUIRY_CREATED", title: "Repeat-business enquiry submitted via a marketing reminder" },
+    data: { customerId, type: "ENQUIRY_CREATED", title: `Repeat-business enquiry submitted via ${source}` },
   });
 
   if (data.reminderId) {

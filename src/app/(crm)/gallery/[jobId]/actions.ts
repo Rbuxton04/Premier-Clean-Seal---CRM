@@ -2,7 +2,7 @@
 
 import { revalidatePath } from "next/cache";
 import { pairPhotosSchema } from "@/validators/media";
-import { pairPhotos, unpairPhoto } from "@/services/media.service";
+import { pairPhotos, unpairPhoto, setPairSharedToPortal } from "@/services/media.service";
 
 export type PairPhotosResult = { ok: true } | { ok: false; message: string };
 
@@ -17,5 +17,10 @@ export async function pairPhotosAction(jobId: string, photoId: string, pairWithI
 
 export async function unpairPhotoAction(jobId: string, photoId: string): Promise<void> {
   await unpairPhoto(photoId);
+  revalidatePath(`/gallery/${jobId}`);
+}
+
+export async function sharePairAction(jobId: string, beforeId: string, afterId: string, shared: boolean): Promise<void> {
+  await setPairSharedToPortal(beforeId, afterId, shared);
   revalidatePath(`/gallery/${jobId}`);
 }

@@ -5,6 +5,7 @@ import { getCustomer } from "@/services/customer.service";
 import { listTags } from "@/services/tag.service";
 import { listProductOptions } from "@/services/property.service";
 import { listAlbums, listDocuments } from "@/services/media.service";
+import { listPortalTokens } from "@/services/portal.service";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import { PropertiesPanel } from "./properties-panel";
 import { TagsPanel } from "./tags-panel";
 import { CustomerGalleryPanel } from "./gallery-panel";
 import { CustomerDocumentsPanel } from "./documents-panel";
+import { PortalPanel } from "./portal-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -26,6 +28,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
   const products = await listProductOptions().catch(() => []);
   const albums = await listAlbums(customer.id).catch(() => []);
   const documents = await listDocuments({ customerId: customer.id }).catch(() => []);
+  const portalTokens = await listPortalTokens(customer.id).catch(() => []);
 
   const stat = (label: string, value: string) => (
     <div className="rounded-lg border bg-card px-4 py-3">
@@ -94,6 +97,11 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
                 id: "documents",
                 label: `Documents${documents.length ? ` (${documents.length})` : ""}`,
                 content: <CustomerDocumentsPanel customerId={customer.id} documents={documents} />,
+              },
+              {
+                id: "portal",
+                label: "Portal",
+                content: <PortalPanel customerId={customer.id} tokens={portalTokens} />,
               },
               {
                 id: "edit",

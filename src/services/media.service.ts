@@ -64,6 +64,7 @@ export type AlbumPhoto = {
   url: string;
   thumbnailUrl: string | null;
   pairedWithId: string | null;
+  sharedToPortal: boolean;
   createdAt: Date;
 };
 
@@ -84,7 +85,7 @@ export async function getAlbum(jobId: string): Promise<AlbumDetail | null> {
       property: { select: { id: true, addressLine1: true, postcode: true } },
       files: {
         where: { kind: { in: ["PHOTO", "VIDEO"] } },
-        select: { id: true, kind: true, category: true, url: true, thumbnailUrl: true, pairedWithId: true, createdAt: true },
+        select: { id: true, kind: true, category: true, url: true, thumbnailUrl: true, pairedWithId: true, sharedToPortal: true, createdAt: true },
         orderBy: { createdAt: "asc" },
       },
     },
@@ -117,6 +118,15 @@ export async function unpairPhoto(photoId: string): Promise<void> {
     ops.push(db.mediaFile.update({ where: { id: photo.pairedWithId }, data: { pairedWithId: null } }));
   }
   await db.$transaction(ops);
+}
+
+/** Shares (or unshares) a before/after pair to the customer portal together — the
+ * slider needs both sides, so this always toggles both MediaFile rows as one unit. */
+export async function setPairSharedToPortal(beforeId: string, afterId: string, shared: boolean): Promise<void> {
+  await db.$transaction([
+    db.mediaFile.update({ where: { id: beforeId }, data: { sharedToPortal: shared } }),
+    db.mediaFile.update({ where: { id: afterId }, data: { sharedToPortal: shared } }),
+  ]);
 }
 
 // ---------------------------------------------------------------------------
@@ -241,7 +251,10 @@ export async function listDocuments(
       job: inv.job,
     })),
     ...warranties.map((w) => ({
-      id: `warranty-${w.id}`,
+      // Keyed by jobId (not the warranty's own id) so the portal PDF proxy
+      // route can look it up via getWarrantyByJobId, which is all that
+      // service exposes — see the Milestone 11 note in portal.service.ts.
+      id: `warranty-${w.job.id}`,
       category: "CERTIFICATE",
       name: `Warranty ${w.job.jobNumber}.pdf`,
       url: `/api/jobs/${w.job.id}/warranty-pdf`,

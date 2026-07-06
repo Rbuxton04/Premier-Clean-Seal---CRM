@@ -54,3 +54,42 @@ export async function sendQuoteEmail(input: SendQuoteEmailInput): Promise<void> 
     throw new Error(`Resend API error (${res.status}): ${body}`);
   }
 }
+
+export type SendPortalLinkEmailInput = {
+  to: string;
+  customerName: string;
+  url: string;
+};
+
+export async function sendPortalLinkEmail(input: SendPortalLinkEmailInput): Promise<void> {
+  if (!isResendConfigured()) {
+    throw new Error("RESEND_API_KEY is not set.");
+  }
+
+  const html = `
+    <p>Hi ${input.customerName},</p>
+    <p>You can view your quotes, invoices, warranty certificates and job photos with Premier Clean &amp; Seal any time using your own customer portal:</p>
+    <p><a href="${input.url}">Open your customer portal</a></p>
+    <p>No password needed — this link is just for you. If you didn't expect this email, please ignore it.</p>
+    <p>Thanks,<br/>Premier Clean &amp; Seal</p>
+  `;
+
+  const res = await fetch("https://api.resend.com/emails", {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.RESEND_API_KEY}`,
+      "Content-Type": "application/json",
+    },
+    body: JSON.stringify({
+      from: FROM_ADDRESS,
+      to: [input.to],
+      subject: "Your Premier Clean & Seal customer portal",
+      html,
+    }),
+  });
+
+  if (!res.ok) {
+    const body = await res.text().catch(() => "");
+    throw new Error(`Resend API error (${res.status}): ${body}`);
+  }
+}

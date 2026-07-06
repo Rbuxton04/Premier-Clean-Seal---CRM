@@ -4,8 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { customerSchema, propertySchema } from "@/validators/customer";
 import { workLogSchema } from "@/validators/work-log";
+import { sendPortalLinkSchema } from "@/validators/portal";
 import * as CustomerService from "@/services/customer.service";
 import * as PropertyService from "@/services/property.service";
+import * as PortalService from "@/services/portal.service";
 
 export type FormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -99,4 +101,24 @@ export async function setCustomerTagsAction(customerId: string, formData: FormDa
   const { revalidatePath } = await import("next/cache");
   revalidatePath(`/customers/${customerId}`);
   revalidatePath("/customers");
+}
+
+export type SendPortalLinkState = { ok: boolean; message: string; url?: string } | null;
+
+export async function sendPortalLinkAction(customerId: string, _prev: SendPortalLinkState, formData: FormData): Promise<SendPortalLinkState> {
+  const parsed = sendPortalLinkSchema.safeParse({ expiryDays: formData.get("expiryDays") || undefined });
+  if (!parsed.success) return { ok: false, message: parsed.error.errors[0]?.message ?? "Please check the expiry." };
+
+  const result = await PortalService.sendPortalLinkToCustomer(customerId, parsed.data.expiryDays);
+  revalidatePath(`/customers/${customerId}`);
+  return {
+    ok: true,
+    message: result.emailed ? "Portal link emailed to the customer." : "Email isn't configured yet — copy the link below to share it.",
+    url: result.url,
+  };
+}
+
+export async function revokePortalTokenAction(customerId: string, tokenId: string) {
+  await PortalService.revokePortalToken(tokenId);
+  revalidatePath(`/customers/${customerId}`);
 }

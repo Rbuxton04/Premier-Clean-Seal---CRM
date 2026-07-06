@@ -499,6 +499,7 @@ model MediaFile {
   mimeType       String
   sizeBytes      Int    @default(0)
   pairedWithId   String? // links BEFORE <-> AFTER for sliders
+  sharedToPortal Boolean @default(false) // customer portal only shows photos staff have explicitly shared
   uploadedById   String?
   workLogId      String?
   workLog        PropertyWorkLog? @relation(fields: [workLogId], references: [id])

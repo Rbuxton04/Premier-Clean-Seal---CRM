@@ -272,6 +272,19 @@ export async function recordQuoteViewed(token: string): Promise<void> {
   });
 }
 
+/** Same effect as recordQuoteViewed, keyed by quoteId — used by the customer
+ * portal, which authorises by (quoteId, customerId) rather than the quote's
+ * own separate approval token. Safe to call repeatedly (no-ops once viewed). */
+export async function recordQuoteViewedById(quoteId: string): Promise<void> {
+  const quote = await db.quote.findUnique({ where: { id: quoteId }, select: { id: true, status: true, customerId: true, quoteNumber: true } });
+  if (!quote || quote.status !== "SENT") return;
+
+  await db.quote.update({ where: { id: quote.id }, data: { status: "VIEWED" } });
+  await db.timelineEvent.create({
+    data: { customerId: quote.customerId, type: "QUOTE_VIEWED", title: `Quote ${quote.quoteNumber} viewed by customer via the portal` },
+  });
+}
+
 export type ApprovalResult = { ok: true } | { ok: false; message: string };
 
 export async function approveQuote(token: string, name: string, ip: string | null): Promise<ApprovalResult> {
@@ -301,6 +314,44 @@ export async function rejectQuote(token: string, reason: string | undefined): Pr
       customerId: quote.customerId,
       type: "QUOTE_REJECTED",
       title: `Quote ${quote.quoteNumber} declined by customer${reason ? `: ${reason}` : ""}`,
+    },
+  });
+  return { ok: true };
+}
+
+/**
+ * Portal counterpart to approveQuote/rejectQuote — authorised by (quoteId,
+ * customerId) instead of the quote's own separate approval token, since the
+ * portal already proves "you are this customer" via its own PortalToken.
+ * Never trust a customerId the caller didn't derive from a resolved token.
+ */
+export async function approveQuoteForCustomer(quoteId: string, customerId: string, name: string, ip: string | null): Promise<ApprovalResult> {
+  const quote = await db.quote.findFirst({ where: { id: quoteId, customerId } });
+  if (!quote) return { ok: false, message: "Quote not found." };
+  if (displayStatus(quote) === "EXPIRED") return { ok: false, message: "This quote has expired." };
+  if (quote.status === "APPROVED" || quote.status === "REJECTED") return { ok: false, message: "This quote has already been actioned." };
+
+  await db.quote.update({
+    where: { id: quote.id },
+    data: { status: "APPROVED", approvedAt: new Date(), approvedName: name, approvedIp: ip },
+  });
+  await db.timelineEvent.create({
+    data: { customerId, type: "QUOTE_APPROVED", title: `Quote ${quote.quoteNumber} approved by ${name} via the customer portal` },
+  });
+  return { ok: true };
+}
+
+export async function rejectQuoteForCustomer(quoteId: string, customerId: string, reason: string | undefined): Promise<ApprovalResult> {
+  const quote = await db.quote.findFirst({ where: { id: quoteId, customerId } });
+  if (!quote) return { ok: false, message: "Quote not found." };
+  if (quote.status === "APPROVED" || quote.status === "REJECTED") return { ok: false, message: "This quote has already been actioned." };
+
+  await db.quote.update({ where: { id: quote.id }, data: { status: "REJECTED" } });
+  await db.timelineEvent.create({
+    data: {
+      customerId,
+      type: "QUOTE_REJECTED",
+      title: `Quote ${quote.quoteNumber} declined by customer via the portal${reason ? `: ${reason}` : ""}`,
     },
   });
   return { ok: true };

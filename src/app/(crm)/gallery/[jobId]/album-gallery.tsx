@@ -1,13 +1,13 @@
 "use client";
 
 import { useMemo, useState, useTransition } from "react";
-import { ChevronLeft, ChevronRight, Download, Link2, Share2, Unlink, X } from "lucide-react";
+import { CheckCircle2, ChevronLeft, ChevronRight, Download, Link2, Share2, Unlink, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { BeforeAfterSlider } from "@/components/gallery/before-after-slider";
 import { photoCategories, photoCategoryLabels } from "@/validators/completion";
 import type { AlbumPhoto } from "@/services/media.service";
-import { pairPhotosAction, unpairPhotoAction } from "./actions";
+import { pairPhotosAction, unpairPhotoAction, sharePairAction } from "./actions";
 
 export function AlbumGallery({ jobId, photos }: { jobId: string; photos: AlbumPhoto[] }) {
   const [lightbox, setLightbox] = useState<number | null>(null);
@@ -73,8 +73,14 @@ export function AlbumGallery({ jobId, photos }: { jobId: string; photos: AlbumPh
                       <Download className="h-3.5 w-3.5" /> Download after
                     </a>
                   </Button>
-                  <Button variant="outline" size="sm" disabled title="Coming in Milestone 11 — customer portal">
-                    <Share2 className="h-3.5 w-3.5" /> Share to portal
+                  <Button
+                    variant={before.sharedToPortal ? "default" : "outline"}
+                    size="sm"
+                    disabled={pending}
+                    onClick={() => startTransition(() => sharePairAction(jobId, before.id, after.id, !before.sharedToPortal))}
+                  >
+                    {before.sharedToPortal ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Share2 className="h-3.5 w-3.5" />}
+                    {before.sharedToPortal ? "Shared to portal" : "Share to portal"}
                   </Button>
                   <Button
                     variant="ghost"
