@@ -52,6 +52,25 @@ services:
       - key: CRON_SECRET
         sync: false
 
+  # Milestone 12: daily logical database backup to R2, same CRON_SECRET
+  # pattern as the crons above. No-ops gracefully (logs a warning, doesn't
+  # fail) if R2_* env vars aren't set on the web service yet.
+  - type: cron
+    name: premier-crm-backup-cron
+    runtime: node
+    plan: free
+    schedule: "0 3 * * *"
+    buildCommand: echo "no build needed"
+    startCommand: >-
+      node -e "fetch(process.env.APP_URL + '/api/cron/backup', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } }).then(r => r.text()).then(t => { console.log(t); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })"
+    envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
 databases:
   - name: premier-crm-db
     plan: free

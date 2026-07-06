@@ -10,12 +10,18 @@ import { getJob, listTechnicians } from "@/services/job.service";
 import { jobStatusLabels, jobStatusBadgeVariant, paymentStatusLabels } from "@/validators/job";
 import { applicationAreaLabels } from "@/validators/completion";
 import { JobFieldsForm } from "./job-fields-form";
+import { getCurrentUser } from "@/lib/auth";
+import { canViewFinancials } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
 export default async function JobDetailPage({ params }: { params: { id: string } }) {
   const job = await getJob(params.id);
   if (!job) notFound();
+  const user = await getCurrentUser();
+  // TECHNICIAN can only open jobs assigned to them.
+  if (user?.role === "TECHNICIAN" && job.technicianId !== user.id) notFound();
+  const showFinancials = canViewFinancials(user?.role ?? "READONLY");
   const technicians = await listTechnicians();
 
   return (
@@ -49,6 +55,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                 notes={job.notes}
                 internalNotes={job.internalNotes}
                 technicians={technicians}
+                showFinancials={showFinancials}
               />
             </CardContent>
           </Card>
@@ -193,17 +200,19 @@ export default async function JobDetailPage({ params }: { params: { id: string }
             </Card>
           )}
 
-          <Card>
-            <CardHeader><CardTitle className="text-base">Payment</CardTitle></CardHeader>
-            <CardContent className="space-y-1.5 text-sm">
-              <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span>{formatGBP(Number(job.price))}</span></div>
-              <div className="flex justify-between"><span className="text-muted-foreground">Deposit paid</span><span>{formatGBP(Number(job.depositPaid))}</span></div>
-              <div className="flex justify-between font-medium"><span>Balance due</span><span>{formatGBP(Number(job.balanceDue))}</span></div>
-              <Badge variant="outline" className="mt-1">
-                {paymentStatusLabels[job.paymentStatus as keyof typeof paymentStatusLabels] ?? job.paymentStatus}
-              </Badge>
-            </CardContent>
-          </Card>
+          {showFinancials && (
+            <Card>
+              <CardHeader><CardTitle className="text-base">Payment</CardTitle></CardHeader>
+              <CardContent className="space-y-1.5 text-sm">
+                <div className="flex justify-between"><span className="text-muted-foreground">Price</span><span>{formatGBP(Number(job.price))}</span></div>
+                <div className="flex justify-between"><span className="text-muted-foreground">Deposit paid</span><span>{formatGBP(Number(job.depositPaid))}</span></div>
+                <div className="flex justify-between font-medium"><span>Balance due</span><span>{formatGBP(Number(job.balanceDue))}</span></div>
+                <Badge variant="outline" className="mt-1">
+                  {paymentStatusLabels[job.paymentStatus as keyof typeof paymentStatusLabels] ?? job.paymentStatus}
+                </Badge>
+              </CardContent>
+            </Card>
+          )}
 
           <Card>
             <CardHeader><CardTitle className="text-base">Documents</CardTitle></CardHeader>

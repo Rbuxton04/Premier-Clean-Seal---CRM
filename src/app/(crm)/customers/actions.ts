@@ -8,6 +8,7 @@ import { sendPortalLinkSchema } from "@/validators/portal";
 import * as CustomerService from "@/services/customer.service";
 import * as PropertyService from "@/services/property.service";
 import * as PortalService from "@/services/portal.service";
+import { writeAudit, actorContext } from "@/lib/audit";
 
 export type FormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -30,6 +31,8 @@ export async function createCustomerAction(_prev: FormState, formData: FormData)
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 
   const customer = await CustomerService.createCustomer(parsed.data);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "CREATE", resource: "customer", resourceId: customer.id, after: parsed.data, ip });
   revalidatePath("/customers");
   redirect(`/customers/${customer.id}`);
 }
@@ -46,7 +49,18 @@ export async function updateCustomerAction(id: string, _prev: FormState, formDat
   });
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 
+  const before = await CustomerService.getCustomer(id);
   await CustomerService.updateCustomer(id, parsed.data);
+  const { userId, ip } = await actorContext();
+  await writeAudit({
+    userId,
+    action: "UPDATE",
+    resource: "customer",
+    resourceId: id,
+    before: before ? { name: before.name, company: before.company, phone: before.phone, email: before.email } : undefined,
+    after: parsed.data,
+    ip,
+  });
   revalidatePath(`/customers/${id}`);
   return { ok: true, message: "Customer updated" };
 }
@@ -110,6 +124,8 @@ export async function sendPortalLinkAction(customerId: string, _prev: SendPortal
   if (!parsed.success) return { ok: false, message: parsed.error.errors[0]?.message ?? "Please check the expiry." };
 
   const result = await PortalService.sendPortalLinkToCustomer(customerId, parsed.data.expiryDays);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "CREATE", resource: "portal.token", resourceId: customerId, after: { expiryDays: parsed.data.expiryDays }, ip });
   revalidatePath(`/customers/${customerId}`);
   return {
     ok: true,
@@ -120,5 +136,7 @@ export async function sendPortalLinkAction(customerId: string, _prev: SendPortal
 
 export async function revokePortalTokenAction(customerId: string, tokenId: string) {
   await PortalService.revokePortalToken(tokenId);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "REVOKE", resource: "portal.token", resourceId: tokenId, ip });
   revalidatePath(`/customers/${customerId}`);
 }

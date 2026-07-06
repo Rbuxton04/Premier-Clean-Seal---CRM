@@ -1,5 +1,5 @@
 import { randomBytes } from "crypto";
-import { PrismaClient } from "@prisma/client";
+import { PrismaClient, type Role } from "@prisma/client";
 
 const db = new PrismaClient();
 
@@ -767,6 +767,52 @@ async function main() {
       const appUrl = process.env.APP_URL ?? "http://localhost:3000";
       console.log(`Seeded customer portal token. Test portal URL: ${appUrl}/portal/${portalToken}`);
     }
+  }
+
+  // Milestone 12: default Permission rows so Settings -> Staff & roles has
+  // real data to show, not just the hardcoded fallback in permissions.ts.
+  // These mirror DEFAULT_PERMISSIONS in src/lib/permissions.ts — if you
+  // change one, change the other.
+  const defaultPermissionRows: Array<{ role: Role; resource: string; actions: string[] }> = [
+    { role: "OFFICE", resource: "customers", actions: ["read", "create", "update", "delete"] },
+    { role: "OFFICE", resource: "quotes", actions: ["read", "create", "update", "delete"] },
+    { role: "OFFICE", resource: "jobs", actions: ["read", "create", "update", "delete"] },
+    { role: "OFFICE", resource: "invoices", actions: ["read", "create", "update"] },
+    { role: "OFFICE", resource: "financials", actions: ["read"] },
+    { role: "OFFICE", resource: "marketing", actions: ["read", "create", "update", "delete"] },
+    { role: "ESTIMATOR", resource: "customers", actions: ["read", "create", "update"] },
+    { role: "ESTIMATOR", resource: "quotes", actions: ["read", "create", "update"] },
+    { role: "ESTIMATOR", resource: "jobs", actions: ["read"] },
+    { role: "SALES", resource: "customers", actions: ["read", "create", "update"] },
+    { role: "SALES", resource: "quotes", actions: ["read", "create"] },
+    { role: "SALES", resource: "marketing", actions: ["read", "create", "update"] },
+    { role: "TECHNICIAN", resource: "jobs", actions: ["read", "update"] },
+    { role: "TECHNICIAN", resource: "gallery", actions: ["read", "create"] },
+    { role: "READONLY", resource: "customers", actions: ["read"] },
+    { role: "READONLY", resource: "quotes", actions: ["read"] },
+    { role: "READONLY", resource: "jobs", actions: ["read"] },
+    { role: "READONLY", resource: "invoices", actions: ["read"] },
+  ];
+  for (const row of defaultPermissionRows) {
+    await db.permission.upsert({
+      where: { organisationId_role_resource: { organisationId: org.id, role: row.role, resource: row.resource } },
+      update: {},
+      create: { organisationId: org.id, role: row.role, resource: row.resource, actions: row.actions },
+    });
+  }
+
+  // A few sample AuditLog entries so the ADMIN-only viewer isn't empty on
+  // first look. Idempotent by checking for a marker entry first.
+  const auditSeeded = await db.auditLog.findFirst({ where: { organisationId: org.id, resource: "organisation.settings", action: "SEED" } });
+  if (!auditSeeded) {
+    await db.auditLog.createMany({
+      data: [
+        { organisationId: org.id, action: "SEED", resource: "organisation.settings", after: { note: "Initial seed run" } },
+        { organisationId: org.id, action: "CREATE", resource: "customer", resourceId: jracineForPortal?.id, after: { name: "James Ractliffe" } },
+        { organisationId: org.id, action: "CREATE", resource: "tag", after: { name: "Contractor" } },
+      ],
+    });
+    console.log("Seeded sample audit log entries.");
   }
 
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);

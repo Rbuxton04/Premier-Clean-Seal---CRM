@@ -9,6 +9,7 @@ import {
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandSwoosh } from "./brand-swoosh";
+import type { Role } from "@prisma/client";
 
 const nav = [
   { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
@@ -27,8 +28,13 @@ const nav = [
   { href: "/search", label: "AI Search", icon: Search },
 ];
 
-export function Sidebar() {
+// TECHNICIAN's day-to-day is assigned jobs + completion — the rest of the
+// nav (customers, quotes, invoices, marketing, etc.) is office/admin territory.
+const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/calendar", "/gallery", "/documents"]);
+
+export function Sidebar({ role }: { role: Role | null }) {
   const pathname = usePathname();
+  const items = role === "TECHNICIAN" ? nav.filter((item) => TECHNICIAN_ALLOWED_HREFS.has(item.href)) : nav;
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col bg-brand-slate-ink text-brand-silver">
@@ -42,7 +48,7 @@ export function Sidebar() {
       </div>
 
       <nav className="mt-2 flex-1 space-y-0.5 px-3" aria-label="Main">
-        {nav.map(({ href, label, icon: Icon }) => {
+        {items.map(({ href, label, icon: Icon }) => {
           const active = pathname.startsWith(href);
           return (
             <Link

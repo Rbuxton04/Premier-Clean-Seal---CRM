@@ -116,9 +116,10 @@ model Customer {
   mediaFiles     MediaFile[]
   tags           Tag[]           @relation("CustomerTags")
 
-  createdAt DateTime  @default(now())
-  updatedAt DateTime  @updatedAt
-  deletedAt DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  deletedAt    DateTime?
+  anonymisedAt DateTime? // set by the GDPR "erase" action; personal fields are scrubbed at that point
 
   @@index([organisationId, name])
 }

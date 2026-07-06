@@ -20,6 +20,7 @@ export type CustomerWithDetail = {
   createdAt: Date;
   updatedAt: Date;
   deletedAt: Date | null;
+  anonymisedAt: Date | null;
   properties: Array<{
     id: string; addressLine1: string; addressLine2: string | null;
     city: string | null; postcode: string; propertyType: string; notes: string | null;
@@ -131,6 +132,14 @@ export async function updateCustomer(id: string, data: CustomerInput) {
 
 export async function softDeleteCustomer(id: string) {
   return db.customer.update({ where: { id }, data: { deletedAt: new Date() } });
+}
+
+/** Consent centre toggle — opt-out takes effect immediately (no confirmation delay). */
+export async function setMarketingConsent(id: string, marketingEmail: boolean, marketingSms: boolean) {
+  return db.customer.update({
+    where: { id },
+    data: { marketingEmail, marketingSms, consentAt: marketingEmail || marketingSms ? new Date() : null },
+  });
 }
 
 export async function addProperty(customerId: string, data: PropertyInput) {

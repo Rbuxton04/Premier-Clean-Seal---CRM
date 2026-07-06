@@ -9,6 +9,8 @@ import { listJobs, listTechnicians } from "@/services/job.service";
 import { jobStatuses, jobStatusLabels, jobStatusBadgeVariant, paymentStatusLabels } from "@/validators/job";
 import type { JobListItem } from "@/services/job.service";
 import { JobFilters } from "./job-filters";
+import { getCurrentUser } from "@/lib/auth";
+import { canViewFinancials } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -22,7 +24,12 @@ async function loadJobs(status?: string, technicianId?: string) {
 }
 
 export default async function JobsPage({ searchParams }: { searchParams: { status?: string; technicianId?: string } }) {
-  const { status, technicianId } = searchParams;
+  const { status } = searchParams;
+  const user = await getCurrentUser();
+  // TECHNICIAN only ever sees their own assigned jobs — the query param is
+  // ignored for them rather than trusted from the client.
+  const technicianId = user?.role === "TECHNICIAN" ? user.id : searchParams.technicianId;
+  const showFinancials = canViewFinancials(user?.role ?? "READONLY");
   const { jobs, technicians, dbOnline } = await loadJobs(status, technicianId);
 
   return (
@@ -73,8 +80,8 @@ export default async function JobsPage({ searchParams }: { searchParams: { statu
                   <TableHead>Status</TableHead>
                   <TableHead>Technician</TableHead>
                   <TableHead>Scheduled</TableHead>
-                  <TableHead className="text-right">Price</TableHead>
-                  <TableHead>Payment</TableHead>
+                  {showFinancials && <TableHead className="text-right">Price</TableHead>}
+                  {showFinancials && <TableHead>Payment</TableHead>}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -92,8 +99,8 @@ export default async function JobsPage({ searchParams }: { searchParams: { statu
                     </TableCell>
                     <TableCell>{j.technician?.name ?? "Unassigned"}</TableCell>
                     <TableCell>{j.scheduledStart ? new Date(j.scheduledStart).toLocaleDateString("en-GB") : "—"}</TableCell>
-                    <TableCell className="text-right">{formatGBP(Number(j.price))}</TableCell>
-                    <TableCell>{paymentStatusLabels[j.paymentStatus as keyof typeof paymentStatusLabels] ?? j.paymentStatus}</TableCell>
+                    {showFinancials && <TableCell className="text-right">{formatGBP(Number(j.price))}</TableCell>}
+                    {showFinancials && <TableCell>{paymentStatusLabels[j.paymentStatus as keyof typeof paymentStatusLabels] ?? j.paymentStatus}</TableCell>}
                   </TableRow>
                 ))}
               </TableBody>

@@ -30,6 +30,7 @@ export function JobFieldsForm({
   notes,
   internalNotes,
   technicians,
+  showFinancials = true,
 }: {
   jobId: string;
   status: string;
@@ -41,6 +42,7 @@ export function JobFieldsForm({
   notes: string | null;
   internalNotes: string | null;
   technicians: Array<{ id: string; name: string }>;
+  showFinancials?: boolean;
 }) {
   const action = updateJobAction.bind(null, jobId);
   const [state, formAction] = useFormState<JobFormState, FormData>(action, null);
@@ -69,14 +71,18 @@ export function JobFieldsForm({
           <Label htmlFor="scheduledEnd">Scheduled end</Label>
           <Input id="scheduledEnd" name="scheduledEnd" type="date" defaultValue={toDateInputValue(scheduledEnd)} />
         </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="price">Price (£)</Label>
-          <Input id="price" name="price" type="number" min="0" step="0.01" defaultValue={price != null ? Number(price) : ""} />
-        </div>
-        <div className="space-y-1.5">
-          <Label htmlFor="depositPaid">Deposit paid (£)</Label>
-          <Input id="depositPaid" name="depositPaid" type="number" min="0" step="0.01" defaultValue={depositPaid != null ? Number(depositPaid) : ""} />
-        </div>
+        {showFinancials && (
+          <div className="space-y-1.5">
+            <Label htmlFor="price">Price (£)</Label>
+            <Input id="price" name="price" type="number" min="0" step="0.01" defaultValue={price != null ? Number(price) : ""} />
+          </div>
+        )}
+        {showFinancials && (
+          <div className="space-y-1.5">
+            <Label htmlFor="depositPaid">Deposit paid (£)</Label>
+            <Input id="depositPaid" name="depositPaid" type="number" min="0" step="0.01" defaultValue={depositPaid != null ? Number(depositPaid) : ""} />
+          </div>
+        )}
       </div>
 
       <div className="space-y-1.5">

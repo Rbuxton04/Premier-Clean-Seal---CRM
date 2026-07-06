@@ -1,14 +1,15 @@
 import { createHmac, timingSafeEqual } from "crypto";
 
 /**
- * Resend signs webhooks using the Svix scheme (svix-id / svix-timestamp /
- * svix-signature headers, HMAC-SHA256 over "id.timestamp.body"). Verification
- * is skipped gracefully when RESEND_WEBHOOK_SECRET isn't set — matching the
- * rest of the app's "unconfigured provider degrades gracefully" pattern —
- * rather than rejecting every event when the operator hasn't wired the
- * secret in yet.
+ * Both Resend and Clerk sign webhooks using the same Svix scheme (svix-id /
+ * svix-timestamp / svix-signature headers, HMAC-SHA256 over
+ * "id.timestamp.body", secret base64-encoded after a "whsec_" prefix).
+ * Verification is skipped gracefully when no secret is configured —
+ * matching the rest of the app's "unconfigured provider degrades
+ * gracefully" pattern — rather than rejecting every event when the
+ * operator hasn't wired the secret in yet.
  */
-export function verifyResendSignature(opts: {
+export function verifySvixSignature(opts: {
   id: string | null;
   timestamp: string | null;
   signature: string | null;
@@ -35,6 +36,9 @@ export function verifyResendSignature(opts: {
     }
   });
 }
+
+export const verifyResendSignature = verifySvixSignature;
+export const verifyClerkWebhookSignature = verifySvixSignature;
 
 /**
  * Twilio signs webhooks with HMAC-SHA1 over the exact callback URL plus its

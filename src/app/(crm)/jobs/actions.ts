@@ -4,6 +4,9 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { jobFormSchema, jobUpdateSchema } from "@/validators/job";
 import * as JobService from "@/services/job.service";
+import { canViewFinancials } from "@/lib/permissions";
+import { getCurrentUser } from "@/lib/auth";
+import { writeAudit, actorContext } from "@/lib/audit";
 
 export type JobFormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -26,6 +29,8 @@ export async function createJobAction(_prev: JobFormState, formData: FormData): 
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 
   const job = await JobService.createJob(parsed.data);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "CREATE", resource: "job", resourceId: job.id, after: { customerId: parsed.data.customerId }, ip });
   revalidatePath("/jobs");
   redirect(`/jobs/${job.id}`);
 }
@@ -43,7 +48,22 @@ export async function updateJobAction(id: string, _prev: JobFormState, formData:
   });
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 
+  // Financial fields can never be changed by a role that isn't allowed to see
+  // them, regardless of what the submitted form contained.
+  const user = await getCurrentUser();
+  if (!user || !canViewFinancials(user.role)) {
+    parsed.data.price = undefined;
+    parsed.data.depositPaid = undefined;
+  }
+  // TECHNICIAN can only update jobs assigned to them.
+  if (user?.role === "TECHNICIAN") {
+    const job = await JobService.getJob(id);
+    if (!job || job.technicianId !== user.id) return { ok: false, message: "You can only update jobs assigned to you." };
+  }
+
   await JobService.updateJob(id, parsed.data);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "UPDATE", resource: "job", resourceId: id, after: { status: parsed.data.status }, ip });
   revalidatePath(`/jobs/${id}`);
   revalidatePath("/jobs");
   return { ok: true, message: "Saved" };

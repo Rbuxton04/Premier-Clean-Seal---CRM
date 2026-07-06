@@ -6,6 +6,7 @@ import { listTags } from "@/services/tag.service";
 import { listProductOptions } from "@/services/property.service";
 import { listAlbums, listDocuments } from "@/services/media.service";
 import { listPortalTokens } from "@/services/portal.service";
+import { getCurrentUser } from "@/lib/auth";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -18,6 +19,7 @@ import { TagsPanel } from "./tags-panel";
 import { CustomerGalleryPanel } from "./gallery-panel";
 import { CustomerDocumentsPanel } from "./documents-panel";
 import { PortalPanel } from "./portal-panel";
+import { GdprPanel } from "./gdpr-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -29,6 +31,8 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
   const albums = await listAlbums(customer.id).catch(() => []);
   const documents = await listDocuments({ customerId: customer.id }).catch(() => []);
   const portalTokens = await listPortalTokens(customer.id).catch(() => []);
+  const currentUser = await getCurrentUser();
+  const isAdmin = currentUser?.role === "ADMIN";
 
   const stat = (label: string, value: string) => (
     <div className="rounded-lg border bg-card px-4 py-3">
@@ -102,6 +106,21 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
                 id: "portal",
                 label: "Portal",
                 content: <PortalPanel customerId={customer.id} tokens={portalTokens} />,
+              },
+              {
+                id: "gdpr",
+                label: "GDPR",
+                content: (
+                  <GdprPanel
+                    customerId={customer.id}
+                    customerName={customer.name}
+                    isAdmin={isAdmin}
+                    marketingEmail={customer.marketingEmail}
+                    marketingSms={customer.marketingSms}
+                    consentAt={customer.consentAt}
+                    anonymised={Boolean(customer.anonymisedAt)}
+                  />
+                ),
               },
               {
                 id: "edit",

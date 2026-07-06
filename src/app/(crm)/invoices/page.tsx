@@ -8,6 +8,8 @@ import { formatGBP } from "@/lib/utils";
 import { listInvoices } from "@/services/invoice.service";
 import { paymentStatusLabels } from "@/validators/job";
 import type { InvoiceListItem } from "@/services/invoice.service";
+import { getCurrentUser } from "@/lib/auth";
+import { canViewFinancials } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,18 @@ async function loadInvoices() {
 }
 
 export default async function InvoicesPage() {
+  const user = await getCurrentUser();
+  if (!canViewFinancials(user?.role ?? "READONLY")) {
+    return (
+      <div className="space-y-4">
+        <div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight">Invoices</h1>
+          <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
+        </div>
+        <Badge variant="warning">Invoices are restricted to Admin and Office roles.</Badge>
+      </div>
+    );
+  }
   const { invoices, dbOnline } = await loadInvoices();
 
   return (

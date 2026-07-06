@@ -7,6 +7,7 @@ import * as QuoteService from "@/services/quote.service";
 import * as JobService from "@/services/job.service";
 import type { SendQuoteResult } from "@/services/quote.service";
 import type { ConvertToJobResult } from "@/services/job.service";
+import { writeAudit, actorContext } from "@/lib/audit";
 
 export type QuoteFormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -39,6 +40,8 @@ export async function createQuoteAction(_prev: QuoteFormState, formData: FormDat
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 
   const quote = await QuoteService.createQuote(parsed.data);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "CREATE", resource: "quote", resourceId: quote.id, after: { customerId: parsed.data.customerId }, ip });
   revalidatePath("/quotes");
   redirect(`/quotes/${quote.id}`);
 }
@@ -52,12 +55,16 @@ export async function updateQuoteAction(id: string, _prev: QuoteFormState, formD
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 
   await QuoteService.updateQuote(id, parsed.data);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "UPDATE", resource: "quote", resourceId: id, before: { total: existing.total, status: existing.status }, ip });
   revalidatePath(`/quotes/${id}`);
   return { ok: true, message: "Saved" };
 }
 
 export async function sendQuoteAction(id: string): Promise<SendQuoteResult> {
   const result = await QuoteService.sendQuote(id);
+  const { userId, ip } = await actorContext();
+  await writeAudit({ userId, action: "SEND", resource: "quote", resourceId: id, after: { emailed: result.emailed }, ip });
   revalidatePath(`/quotes/${id}`);
   revalidatePath("/quotes");
   return result;
