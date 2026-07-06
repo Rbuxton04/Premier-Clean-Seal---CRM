@@ -4,12 +4,15 @@ import {
   buildPrompt,
   buildMarketingPrompt,
   buildInsightPrompt,
+  buildSearchPrompt,
   ANALYSIS_JSON_SCHEMA,
+  SEARCH_JSON_SCHEMA,
   type AIProvider,
   type AnalyseInput,
   type AIAnalysisResult,
   type MarketingCopyInput,
   type BusinessInsightInput,
+  type SearchParseInput,
 } from "../provider";
 
 export class OpenAIProvider implements AIProvider {
@@ -87,5 +90,36 @@ export class OpenAIProvider implements AIProvider {
     const text = response.choices[0]?.message?.content?.trim();
     if (!text) throw new Error("OpenAI did not return a report.");
     return text;
+  }
+
+  async parseSearchQuery(input: SearchParseInput): Promise<Record<string, unknown>> {
+    const client = new OpenAI({ apiKey: this.apiKey });
+    const { system, user } = buildSearchPrompt(input);
+
+    const response = await client.chat.completions.create({
+      model: this.model,
+      temperature: 0.1,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+      tools: [
+        {
+          type: "function",
+          function: {
+            name: "record_search",
+            description: "Record the structured search filter.",
+            parameters: SEARCH_JSON_SCHEMA,
+          },
+        },
+      ],
+      tool_choice: { type: "function", function: { name: "record_search" } },
+    });
+
+    const toolCall = response.choices[0]?.message?.tool_calls?.[0];
+    if (!toolCall || toolCall.type !== "function") {
+      throw new Error("OpenAI did not return the expected tool call.");
+    }
+    return JSON.parse(toolCall.function.arguments);
   }
 }

@@ -102,10 +102,23 @@ export type BusinessInsightInput = {
   digest: Record<string, unknown>;
 };
 
+// Milestone 10 — natural-language search. The model NEVER produces SQL or a
+// Prisma query; it only ever fills in this small, whitelisted filter shape
+// via tool-calling, which src/validators/search.ts then validates and
+// src/services/search.service.ts compiles into an org-scoped Prisma query.
+// See the security-boundary note on searchQuerySchema.
+export type SearchParseInput = {
+  question: string;
+  todayIso: string;
+  tags: string[];
+  technicians: string[];
+};
+
 export interface AIProvider {
   analyseEnquiryImages(input: AnalyseInput): Promise<AIAnalysisResult>;
   generateMarketingCopy(input: MarketingCopyInput): Promise<string>;
   generateBusinessInsight(input: BusinessInsightInput): Promise<string>;
+  parseSearchQuery(input: SearchParseInput): Promise<Record<string, unknown>>;
 }
 
 const SYSTEM_PROMPT = `You are a surveying assistant for a UK silicone-sealant contractor (Premier Clean & Seal, Wigan).
@@ -168,4 +181,82 @@ Keep it to 150-250 words, short paragraphs or a few bullet points, no markdown h
 export function buildInsightPrompt(input: BusinessInsightInput): { system: string; user: string } {
   const user = `Reporting period: ${input.periodLabel}\n\nData:\n${JSON.stringify(input.digest, null, 2)}`;
   return { system: INSIGHT_SYSTEM_PROMPT, user };
+}
+
+// Plain JSON Schema mirror of searchFiltersSchema/searchQuerySchema, handed
+// to each provider's tool/function-calling API — kept in sync by hand, same
+// convention as ANALYSIS_JSON_SCHEMA above. Nullable fields use a ["string",
+// "null"] type union so the model can explicitly say "not mentioned" rather
+// than guessing a value.
+export const SEARCH_JSON_SCHEMA = {
+  type: "object",
+  properties: {
+    entity: {
+      type: "string",
+      enum: ["jobs", "customers", "properties", "enquiries"],
+      description: "Which record type best answers the question.",
+    },
+    filters: {
+      type: "object",
+      properties: {
+        workType: {
+          type: ["string", "null"],
+          description:
+            "One of BATHROOM, KITCHEN, SHOWER, EXTERNAL_WINDOWS, EXPANSION_JOINTS, FIRE_SEALANT, CUT_OUT_RESEAL, NEW_SILICONE, OTHER — or null.",
+        },
+        applicationArea: {
+          type: ["string", "null"],
+          description: "One of INTERNAL, EXTERNAL, BATHROOM, ENSUITE, KITCHEN, WINDOW, EXPANSION_JOINT — or null.",
+        },
+        propertyType: {
+          type: ["string", "null"],
+          description: "One of RESIDENTIAL, COMMERCIAL, HOTEL, OFFICE, HOSPITAL, OTHER — or null.",
+        },
+        tag: { type: ["string", "null"], description: "A client tag name, e.g. Contractor or Domestic." },
+        colour: { type: ["string", "null"], description: "A silicone colour mentioned, e.g. Jasmine White." },
+        product: { type: ["string", "null"], description: "A product name mentioned, e.g. 785+ Bacteria Resistant." },
+        manufacturer: { type: ["string", "null"], description: "A manufacturer mentioned, e.g. Dow, Sika, Mapei." },
+        technician: { type: ["string", "null"], description: "A technician's name mentioned." },
+        status: {
+          type: ["string", "null"],
+          description: "A status word mentioned, e.g. completed, booked, sent, approved, new.",
+        },
+        mouldFound: { type: ["boolean", "null"], description: "True if the question is specifically about mould found." },
+        dueFollowUp: { type: ["boolean", "null"], description: "True if the question is about customers due a marketing follow-up/reminder." },
+        completedBefore: { type: ["string", "null"], description: "ISO date YYYY-MM-DD, computed from today's date for relative phrases like 'two years ago'." },
+        completedAfter: { type: ["string", "null"], description: "ISO date YYYY-MM-DD." },
+        createdBefore: { type: ["string", "null"], description: "ISO date YYYY-MM-DD." },
+        createdAfter: { type: ["string", "null"], description: "ISO date YYYY-MM-DD." },
+        postcodeStartsWith: { type: ["string", "null"] },
+        textContains: { type: ["string", "null"], description: "Any other free-text keyword to match generally." },
+      },
+      required: [],
+    },
+    sort: { type: ["string", "null"], enum: ["newest", "oldest", null] },
+    clarification: {
+      type: ["string", "null"],
+      description:
+        "If the question is too vague or ambiguous to confidently turn into filters, put a brief, friendly clarifying question here instead of guessing wildly, and leave filters mostly empty.",
+    },
+  },
+  required: ["entity", "filters"],
+} as const;
+
+const SEARCH_SYSTEM_PROMPT = `You turn a staff member's plain-English question about their CRM data into a small structured filter, for Premier Clean & Seal, a UK silicone-sealant contractor.
+You NEVER write SQL or code and you never invent a database query yourself — you only ever call the record_search tool with the whitelisted filter fields it defines; the application is what compiles those into a safe, validated, organisation-scoped database query.
+Pick the single best "entity" (jobs, customers, properties, or enquiries) the question is really asking about.
+Compute relative dates (e.g. "over two years ago", "last month") from today's date, given below, and always emit dates as YYYY-MM-DD.
+Known tag names and technician names are provided below — prefer matching against those, but you may still emit a plausible value if the question names someone or something not in the list.
+If the question is too vague to turn into a sensible filter (e.g. just "jobs" with no criteria at all), set clarification to a short, friendly follow-up question instead of guessing wildly.
+Respond only by calling the record_search tool.`;
+
+export function buildSearchPrompt(input: SearchParseInput): { system: string; user: string } {
+  const user = [
+    `Today's date: ${input.todayIso}`,
+    `Known tags: ${input.tags.join(", ") || "(none)"}`,
+    `Known technicians: ${input.technicians.join(", ") || "(none)"}`,
+    "",
+    `Question: ${input.question}`,
+  ].join("\n");
+  return { system: SEARCH_SYSTEM_PROMPT, user };
 }

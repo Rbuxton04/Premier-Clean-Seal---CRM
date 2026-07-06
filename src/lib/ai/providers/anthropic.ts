@@ -4,12 +4,15 @@ import {
   buildPrompt,
   buildMarketingPrompt,
   buildInsightPrompt,
+  buildSearchPrompt,
   ANALYSIS_JSON_SCHEMA,
+  SEARCH_JSON_SCHEMA,
   type AIProvider,
   type AnalyseInput,
   type AIAnalysisResult,
   type MarketingCopyInput,
   type BusinessInsightInput,
+  type SearchParseInput,
 } from "../provider";
 
 export class AnthropicProvider implements AIProvider {
@@ -85,5 +88,29 @@ export class AnthropicProvider implements AIProvider {
     const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === "text");
     if (!textBlock) throw new Error("Claude did not return a report.");
     return textBlock.text.trim();
+  }
+
+  async parseSearchQuery(input: SearchParseInput): Promise<Record<string, unknown>> {
+    const client = new Anthropic({ apiKey: this.apiKey });
+    const { system, user } = buildSearchPrompt(input);
+
+    const response = await client.messages.create({
+      model: this.model,
+      max_tokens: 800,
+      system,
+      messages: [{ role: "user", content: user }],
+      tools: [
+        {
+          name: "record_search",
+          description: "Record the structured search filter.",
+          input_schema: SEARCH_JSON_SCHEMA as unknown as Anthropic.Tool.InputSchema,
+        },
+      ],
+      tool_choice: { type: "tool", name: "record_search" },
+    });
+
+    const toolUse = response.content.find((b): b is Anthropic.ToolUseBlock => b.type === "tool_use");
+    if (!toolUse) throw new Error("Claude did not return the expected tool call.");
+    return toolUse.input as Record<string, unknown>;
   }
 }
