@@ -370,6 +370,13 @@ async function main() {
       result.setMonth(result.getMonth() + months);
       return result;
     };
+    // Self-contained placeholder image (no external network call) so the
+    // gallery and before/after slider render with content even before real
+    // completion photos exist.
+    const placeholderImage = (label: string, bg: string): string => {
+      const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="800" height="600"><rect width="100%" height="100%" fill="${bg}"/><text x="50%" y="50%" font-family="Arial" font-size="48" fill="#ffffff" text-anchor="middle" dominant-baseline="middle">${label}</text></svg>`;
+      return `data:image/svg+xml;base64,${Buffer.from(svg).toString("base64")}`;
+    };
 
     // Job 1: converted from the approved quote — demonstrates the M4 -> M5 flow.
     if (approvedQuote && sarahCustomer) {
@@ -529,6 +536,48 @@ async function main() {
           { customerId: jracine.id, jobId: job4.id, type: "WARRANTY_ISSUED", title: `Warranty issued for job ${jobNumber} (${org.defaultWarrantyMonths} months)` },
           { customerId: jracine.id, jobId: job4.id, type: "INVOICE_RAISED", title: `Invoice ${invoiceNumber} raised` },
         ],
+      });
+
+      // Milestone 7: a paired before/after photo (for the gallery slider) and
+      // a compliance document, so those views aren't empty either.
+      const beforePhoto = await db.mediaFile.create({
+        data: {
+          organisationId: org.id,
+          customerId: jracine.id,
+          jobId: job4.id,
+          kind: "PHOTO",
+          category: "BEFORE",
+          url: placeholderImage("BEFORE", "#58606B"),
+          mimeType: "image/svg+xml",
+          sizeBytes: 0,
+        },
+      });
+      const afterPhoto = await db.mediaFile.create({
+        data: {
+          organisationId: org.id,
+          customerId: jracine.id,
+          jobId: job4.id,
+          kind: "PHOTO",
+          category: "AFTER",
+          url: placeholderImage("AFTER", "#3C2263"),
+          mimeType: "image/svg+xml",
+          sizeBytes: 0,
+        },
+      });
+      await db.mediaFile.update({ where: { id: beforePhoto.id }, data: { pairedWithId: afterPhoto.id } });
+      await db.mediaFile.update({ where: { id: afterPhoto.id }, data: { pairedWithId: beforePhoto.id } });
+
+      await db.mediaFile.create({
+        data: {
+          organisationId: org.id,
+          customerId: jracine.id,
+          jobId: job4.id,
+          kind: "DOCUMENT",
+          category: "RAMS",
+          url: `data:text/plain;base64,${Buffer.from("RAMS - Risk Assessment Method Statement (placeholder document).").toString("base64")}`,
+          mimeType: "text/plain",
+          sizeBytes: 0,
+        },
       });
     }
 

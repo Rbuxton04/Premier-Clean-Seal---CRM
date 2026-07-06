@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CheckCircle2, Receipt, ShieldCheck, Wrench } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FolderOpen, Images, Receipt, ShieldCheck, Wrench } from "lucide-react";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -103,7 +103,12 @@ export default async function JobDetailPage({ params }: { params: { id: string }
 
                 {job.files.filter((f) => f.kind === "PHOTO").length > 0 && (
                   <div>
-                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Photos</p>
+                    <div className="mb-1 flex items-center justify-between">
+                      <p className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Photos</p>
+                      <Link href={`/gallery/${job.id}`} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                        <Images className="h-3.5 w-3.5" /> View full album
+                      </Link>
+                    </div>
                     <div className="flex flex-wrap gap-2">
                       {job.files.filter((f) => f.kind === "PHOTO").map((f) => (
                         // eslint-disable-next-line @next/next/no-img-element
@@ -197,6 +202,15 @@ export default async function JobDetailPage({ params }: { params: { id: string }
               <Badge variant="outline" className="mt-1">
                 {paymentStatusLabels[job.paymentStatus as keyof typeof paymentStatusLabels] ?? job.paymentStatus}
               </Badge>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle className="text-base">Documents</CardTitle></CardHeader>
+            <CardContent>
+              <Link href={`/documents?jobId=${job.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                <FolderOpen className="h-4 w-4" /> View documents &amp; certificates
+              </Link>
             </CardContent>
           </Card>
         </div>

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Inbox, Users, FileText, Wrench, CalendarDays,
-  Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Settings,
+  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Settings,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandSwoosh } from "./brand-swoosh";
@@ -17,6 +17,8 @@ const nav = [
   { href: "/quotes", label: "Quotes", icon: FileText },
   { href: "/jobs", label: "Jobs", icon: Wrench },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/gallery", label: "Gallery", icon: Images },
+  { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/invoices", label: "Invoices", icon: Receipt },
   { href: "/warranties", label: "Warranties", icon: ShieldCheck },
   { href: "/materials", label: "Materials", icon: Layers },

@@ -4,6 +4,7 @@ import { ArrowLeft, Mail, Phone, Building2 } from "lucide-react";
 import { getCustomer } from "@/services/customer.service";
 import { listTags } from "@/services/tag.service";
 import { listProductOptions } from "@/services/property.service";
+import { listAlbums, listDocuments } from "@/services/media.service";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -13,6 +14,8 @@ import { Tabs } from "./tabs";
 import { Timeline } from "./timeline";
 import { PropertiesPanel } from "./properties-panel";
 import { TagsPanel } from "./tags-panel";
+import { CustomerGalleryPanel } from "./gallery-panel";
+import { CustomerDocumentsPanel } from "./documents-panel";
 
 export const dynamic = "force-dynamic";
 
@@ -21,6 +24,8 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
   if (!customer) notFound();
   const allTags = await listTags().catch(() => []);
   const products = await listProductOptions().catch(() => []);
+  const albums = await listAlbums(customer.id).catch(() => []);
+  const documents = await listDocuments({ customerId: customer.id }).catch(() => []);
 
   const stat = (label: string, value: string) => (
     <div className="rounded-lg border bg-card px-4 py-3">
@@ -80,6 +85,16 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
                 content: <TagsPanel customerId={customer.id} allTags={allTags.map((t) => ({ id: t.id, name: t.name, colour: t.colour }))} assigned={customer.tags.map((t) => t.id)} />,
               },
               { id: "timeline", label: "Timeline", content: <Timeline events={customer.timeline as any} /> },
+              {
+                id: "gallery",
+                label: `Gallery${albums.length ? ` (${albums.length})` : ""}`,
+                content: <CustomerGalleryPanel albums={albums} />,
+              },
+              {
+                id: "documents",
+                label: `Documents${documents.length ? ` (${documents.length})` : ""}`,
+                content: <CustomerDocumentsPanel customerId={customer.id} documents={documents} />,
+              },
               {
                 id: "edit",
                 label: "Edit",
