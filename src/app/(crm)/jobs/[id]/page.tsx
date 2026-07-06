@@ -1,12 +1,14 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, Wrench } from "lucide-react";
+import { ArrowLeft, CheckCircle2, Receipt, ShieldCheck, Wrench } from "lucide-react";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { formatGBP } from "@/lib/utils";
 import { getJob, listTechnicians } from "@/services/job.service";
 import { jobStatusLabels, jobStatusBadgeVariant, paymentStatusLabels } from "@/validators/job";
+import { applicationAreaLabels } from "@/validators/completion";
 import { JobFieldsForm } from "./job-fields-form";
 
 export const dynamic = "force-dynamic";
@@ -51,19 +53,115 @@ export default async function JobDetailPage({ params }: { params: { id: string }
             </CardContent>
           </Card>
 
-          <Card className="border-dashed opacity-80">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Wrench className="h-4 w-4 text-brand-plum" /> Completion
-              </CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="text-sm text-muted-foreground">
-                Materials used, metres installed, before/after photos, customer signature, satisfaction rating, and
-                warranty + invoice generation arrive in Milestone 6.
-              </p>
-            </CardContent>
-          </Card>
+          {job.status === "COMPLETED" ? (
+            <Card>
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <CheckCircle2 className="h-4 w-4 text-emerald-600" /> Completion
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="grid gap-3 sm:grid-cols-2">
+                  <div>
+                    <p className="text-xs text-muted-foreground">Metres installed</p>
+                    <p className="font-medium">{job.metresInstalled != null ? `${Number(job.metresInstalled)}m` : "—"}</p>
+                  </div>
+                  <div>
+                    <p className="text-xs text-muted-foreground">Satisfaction</p>
+                    <p className="font-medium">
+                      {job.satisfactionRating ? "★".repeat(job.satisfactionRating) + "☆".repeat(5 - job.satisfactionRating) : "—"}
+                    </p>
+                  </div>
+                </div>
+
+                {job.completionNotes && (
+                  <div>
+                    <p className="text-xs text-muted-foreground">Notes</p>
+                    <p className="whitespace-pre-wrap text-sm">{job.completionNotes}</p>
+                  </div>
+                )}
+
+                {job.materials.length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Materials used</p>
+                    <ul className="space-y-1 text-sm">
+                      {job.materials.map((m) => (
+                        <li key={m.id} className="flex items-center justify-between rounded border px-2 py-1">
+                          <span>
+                            {m.product.manufacturer} {m.product.name} — {m.product.colour}
+                            {" "}
+                            <span className="text-muted-foreground">
+                              ({applicationAreaLabels[m.applicationArea as keyof typeof applicationAreaLabels] ?? m.applicationArea})
+                            </span>
+                          </span>
+                          <span className="text-muted-foreground">{Number(m.quantityUsed)} {m.unit}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                )}
+
+                {job.files.filter((f) => f.kind === "PHOTO").length > 0 && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Photos</p>
+                    <div className="flex flex-wrap gap-2">
+                      {job.files.filter((f) => f.kind === "PHOTO").map((f) => (
+                        // eslint-disable-next-line @next/next/no-img-element
+                        <a key={f.id} href={f.url} target="_blank" rel="noreferrer" className="block h-16 w-16 overflow-hidden rounded-md border">
+                          <img src={f.thumbnailUrl ?? f.url} alt={f.category ?? "photo"} className="h-full w-full object-cover" />
+                        </a>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {job.customerSignature && (
+                  <div>
+                    <p className="mb-1 text-xs font-semibold uppercase tracking-wide text-muted-foreground">Customer signature</p>
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img src={job.customerSignature} alt="Customer signature" className="h-20 rounded border bg-white p-1" />
+                  </div>
+                )}
+
+                <div className="flex flex-wrap gap-2 pt-1">
+                  {job.warranty && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`/api/jobs/${job.id}/warranty-pdf`} target="_blank" rel="noreferrer">
+                        <ShieldCheck className="h-3.5 w-3.5" /> Warranty certificate
+                      </a>
+                    </Button>
+                  )}
+                  {job.invoice && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={`/api/jobs/${job.id}/invoice-pdf`} target="_blank" rel="noreferrer">
+                        <Receipt className="h-3.5 w-3.5" /> Invoice {job.invoice.invoiceNumber}
+                      </a>
+                    </Button>
+                  )}
+                </div>
+              </CardContent>
+            </Card>
+          ) : job.status !== "CANCELLED" ? (
+            <Card className="border-dashed">
+              <CardHeader>
+                <CardTitle className="flex items-center gap-2 text-base">
+                  <Wrench className="h-4 w-4 text-brand-plum" /> Completion
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-3">
+                <p className="text-sm text-muted-foreground">
+                  Once the work is done, run the completion wizard to log materials, photos, the customer&apos;s
+                  signature and rating — this automatically raises the warranty certificate, invoice, and schedules
+                  the next marketing reminder.
+                </p>
+                <Button asChild size="sm">
+                  <Link href={`/jobs/${job.id}/complete`}>
+                    <Wrench className="h-3.5 w-3.5" /> Start completion
+                  </Link>
+                </Button>
+              </CardContent>
+            </Card>
+          ) : null}
         </div>
 
         <div className="space-y-6">

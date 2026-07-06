@@ -34,6 +34,9 @@ export type JobDetail = {
   notes: string | null;
   internalNotes: string | null;
   completionNotes: string | null;
+  metresInstalled: unknown;
+  customerSignature: string | null;
+  satisfactionRating: number | null;
   customerId: string;
   technicianId: string | null;
   propertyId: string | null;
@@ -42,6 +45,18 @@ export type JobDetail = {
   property: { id: string; addressLine1: string; postcode: string } | null;
   technician: { id: string; name: string } | null;
   quote: { id: string; quoteNumber: string } | null;
+  materials: Array<{
+    id: string;
+    batchNumber: string | null;
+    applicationArea: string;
+    quantityUsed: unknown;
+    unit: string;
+    cost: unknown;
+    product: { manufacturer: string; name: string; colour: string };
+  }>;
+  files: Array<{ id: string; kind: string; category: string | null; url: string; thumbnailUrl: string | null }>;
+  warranty: { id: string; startDate: Date; endDate: Date; coverage: string; certificateUrl: string | null } | null;
+  invoice: { id: string; invoiceNumber: string; amount: unknown; status: string; dueDate: Date; pdfUrl: string | null } | null;
   createdAt: Date;
   updatedAt: Date;
 };
@@ -94,6 +109,10 @@ export async function getJob(id: string): Promise<JobDetail | null> {
       property: { select: { id: true, addressLine1: true, postcode: true } },
       technician: { select: { id: true, name: true } },
       quote: { select: { id: true, quoteNumber: true } },
+      materials: { include: { product: { select: { manufacturer: true, name: true, colour: true } } } },
+      files: { select: { id: true, kind: true, category: true, url: true, thumbnailUrl: true }, orderBy: { createdAt: "asc" } },
+      warranty: { select: { id: true, startDate: true, endDate: true, coverage: true, certificateUrl: true } },
+      invoice: { select: { id: true, invoiceNumber: true, amount: true, status: true, dueDate: true, pdfUrl: true } },
     },
   });
   return row as JobDetail | null;

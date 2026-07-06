@@ -365,6 +365,11 @@ async function main() {
     };
 
     let jobCounter = 0;
+    const addMonths = (d: Date, months: number): Date => {
+      const result = new Date(d);
+      result.setMonth(result.getMonth() + months);
+      return result;
+    };
 
     // Job 1: converted from the approved quote — demonstrates the M4 -> M5 flow.
     if (approvedQuote && sarahCustomer) {
@@ -433,13 +438,17 @@ async function main() {
       });
     }
 
-    // Job 4: completed last week
+    // Job 4: completed last week — enriched with materials, warranty,
+    // invoice, and a scheduled reminder so those views aren't empty either.
     if (jracine) {
       jobCounter += 1;
-      await db.job.create({
+      const jobNumber = `#J-000${jobCounter}`;
+      const actualEnd = daysFromNow(-6, 13);
+
+      const job4 = await db.job.create({
         data: {
           organisationId: org.id,
-          jobNumber: `#J-000${jobCounter}`,
+          jobNumber,
           customerId: jracine.id,
           propertyId: brambleClose?.id,
           technicianId: mia?.id,
@@ -447,12 +456,79 @@ async function main() {
           scheduledStart: daysFromNow(-6),
           scheduledEnd: daysFromNow(-6, 13),
           actualStart: daysFromNow(-6),
-          actualEnd: daysFromNow(-6, 13),
+          actualEnd,
           price: 150,
-          depositPaid: 150,
-          balanceDue: 0,
+          depositPaid: 50,
+          balanceDue: 100,
           paymentStatus: "PAID",
+          completionNotes: "Bathroom reseal completed — old silicone removed, mould treated, resealed in Jasmine White.",
+          metresInstalled: 9.5,
+          satisfactionRating: 5,
         },
+      });
+
+      const jasmineWhiteForJob = await db.product.findFirst({ where: { organisationId: org.id, manufacturer: "Dow", colour: "Jasmine White" } });
+      if (jasmineWhiteForJob) {
+        await db.materialUsage.create({
+          data: {
+            jobId: job4.id,
+            productId: jasmineWhiteForJob.id,
+            batchNumber: "B2311-04",
+            applicationArea: "BATHROOM",
+            quantityUsed: 3,
+            unit: "tubes",
+            cost: 4.5,
+          },
+        });
+      }
+
+      await db.warranty.create({
+        data: {
+          jobId: job4.id,
+          startDate: actualEnd,
+          endDate: addMonths(actualEnd, org.defaultWarrantyMonths),
+          coverage: `${org.defaultWarrantyMonths}-month warranty against installation defects covering: Bathroom.`,
+        },
+      });
+
+      const invoiceNumber = "#I-0001";
+      const dueDate = new Date(actualEnd);
+      dueDate.setDate(dueDate.getDate() + 14);
+      await db.invoice.create({
+        data: {
+          invoiceNumber,
+          customerId: jracine.id,
+          jobId: job4.id,
+          subtotal: 100,
+          vatApplied: false,
+          vatRatePercent: 0,
+          vatAmount: 0,
+          amount: 100,
+          status: "PAID",
+          dueDate,
+          paidAt: daysFromNow(-4),
+        },
+      });
+      await db.organisation.update({ where: { id: org.id }, data: { invoiceCounter: 1 } });
+
+      await db.marketingReminder.create({
+        data: {
+          organisationId: org.id,
+          customerId: jracine.id,
+          jobId: job4.id,
+          dueDate: addMonths(actualEnd, org.defaultReminderMonths),
+          intervalMonths: org.defaultReminderMonths,
+          channels: jracine.marketingEmail ? ["EMAIL"] : [],
+          status: "SCHEDULED",
+        },
+      });
+
+      await db.timelineEvent.createMany({
+        data: [
+          { customerId: jracine.id, jobId: job4.id, type: "JOB_COMPLETED", title: `Job ${jobNumber} completed` },
+          { customerId: jracine.id, jobId: job4.id, type: "WARRANTY_ISSUED", title: `Warranty issued for job ${jobNumber} (${org.defaultWarrantyMonths} months)` },
+          { customerId: jracine.id, jobId: job4.id, type: "INVOICE_RAISED", title: `Invoice ${invoiceNumber} raised` },
+        ],
       });
     }
 
