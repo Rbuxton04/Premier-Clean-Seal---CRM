@@ -1,5 +1,14 @@
 import Anthropic from "@anthropic-ai/sdk";
-import { aiAnalysisResultSchema, buildPrompt, ANALYSIS_JSON_SCHEMA, type AIProvider, type AnalyseInput, type AIAnalysisResult } from "../provider";
+import {
+  aiAnalysisResultSchema,
+  buildPrompt,
+  buildMarketingPrompt,
+  ANALYSIS_JSON_SCHEMA,
+  type AIProvider,
+  type AnalyseInput,
+  type AIAnalysisResult,
+  type MarketingCopyInput,
+} from "../provider";
 
 export class AnthropicProvider implements AIProvider {
   constructor(private apiKey: string, private model: string) {}
@@ -40,5 +49,22 @@ export class AnthropicProvider implements AIProvider {
     }
 
     return aiAnalysisResultSchema.parse(toolUse.input);
+  }
+
+  async generateMarketingCopy(input: MarketingCopyInput): Promise<string> {
+    const client = new Anthropic({ apiKey: this.apiKey });
+    const { system, user } = buildMarketingPrompt(input);
+
+    // No `temperature` — current Opus models reject non-default sampling params.
+    const response = await client.messages.create({
+      model: this.model,
+      max_tokens: 600,
+      system,
+      messages: [{ role: "user", content: user }],
+    });
+
+    const textBlock = response.content.find((b): b is Anthropic.TextBlock => b.type === "text");
+    if (!textBlock) throw new Error("Claude did not return any copy.");
+    return textBlock.text.trim();
   }
 }

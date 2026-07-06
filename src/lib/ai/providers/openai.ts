@@ -1,5 +1,14 @@
 import OpenAI from "openai";
-import { aiAnalysisResultSchema, buildPrompt, ANALYSIS_JSON_SCHEMA, type AIProvider, type AnalyseInput, type AIAnalysisResult } from "../provider";
+import {
+  aiAnalysisResultSchema,
+  buildPrompt,
+  buildMarketingPrompt,
+  ANALYSIS_JSON_SCHEMA,
+  type AIProvider,
+  type AnalyseInput,
+  type AIAnalysisResult,
+  type MarketingCopyInput,
+} from "../provider";
 
 export class OpenAIProvider implements AIProvider {
   constructor(private apiKey: string, private model: string) {}
@@ -40,5 +49,23 @@ export class OpenAIProvider implements AIProvider {
 
     const raw = JSON.parse(toolCall.function.arguments);
     return aiAnalysisResultSchema.parse(raw);
+  }
+
+  async generateMarketingCopy(input: MarketingCopyInput): Promise<string> {
+    const client = new OpenAI({ apiKey: this.apiKey });
+    const { system, user } = buildMarketingPrompt(input);
+
+    const response = await client.chat.completions.create({
+      model: this.model,
+      temperature: 0.7,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content?.trim();
+    if (!text) throw new Error("OpenAI did not return any copy.");
+    return text;
   }
 }

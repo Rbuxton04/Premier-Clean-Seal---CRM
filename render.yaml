@@ -11,6 +11,28 @@ services:
       - key: NODE_VERSION
         value: 20.17.0
 
+  # Milestone 8: the free web service above sleeps when idle, so a scheduled
+  # Render Cron Job POSTs to /api/cron/marketing every morning instead of
+  # relying on an in-process scheduler. After both services first deploy, set
+  # APP_URL to the web service's live URL and CRON_SECRET to the same value
+  # configured on the web service (Render dashboard -> this cron job ->
+  # Environment), then this fires daily at 08:00 UTC.
+  - type: cron
+    name: premier-crm-marketing-cron
+    runtime: node
+    plan: free
+    schedule: "0 8 * * *"
+    buildCommand: echo "no build needed"
+    startCommand: >-
+      node -e "fetch(process.env.APP_URL + '/api/cron/marketing', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } }).then(r => r.text()).then(t => { console.log(t); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })"
+    envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
 databases:
   - name: premier-crm-db
     plan: free

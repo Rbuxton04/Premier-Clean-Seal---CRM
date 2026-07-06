@@ -82,8 +82,20 @@ export type AnalyseInput = {
   productCatalogue: Array<{ manufacturer: string; name: string; colour: string; attributes: string[] }>;
 };
 
+// Milestone 8 — AI marketing writer. Deliberately free-text (not tool-calling
+// like the analysis above) since campaign copy has no fixed structure to
+// validate against; the draft is always reviewed by a human before sending.
+export type MarketingCopyInput = {
+  tone: string;
+  channel: string;
+  channelRule: string;
+  brief: string;
+  sampleMergeFields?: Record<string, string>;
+};
+
 export interface AIProvider {
   analyseEnquiryImages(input: AnalyseInput): Promise<AIAnalysisResult>;
+  generateMarketingCopy(input: MarketingCopyInput): Promise<string>;
 }
 
 const SYSTEM_PROMPT = `You are a surveying assistant for a UK silicone-sealant contractor (Premier Clean & Seal, Wigan).
@@ -110,4 +122,30 @@ export function buildPrompt(input: AnalyseInput): { system: string; user: string
   ].join("\n");
 
   return { system: SYSTEM_PROMPT, user };
+}
+
+const MARKETING_SYSTEM_PROMPT = `You are a marketing copywriter for Premier Clean & Seal, a UK silicone-sealant contracting business based in Wigan, England.
+You write short repeat-business campaign copy (reminders, social posts) that a member of staff will review and approve before it is ever sent.
+Never fabricate discounts, prices, or guarantees. Keep claims modest and specific to sealant/reseal work.
+Merge fields like {firstName} or {bookLink} must be copied exactly as given — never invent new ones or rename them.
+Respond with the message copy only — no preamble, no explanation, no markdown formatting, no quote marks around the text.`;
+
+export function buildMarketingPrompt(input: MarketingCopyInput): { system: string; user: string } {
+  const mergeLine = input.sampleMergeFields
+    ? `Available merge fields (use where natural, copy exactly): ${Object.keys(input.sampleMergeFields)
+        .map((k) => `{${k}}`)
+        .join(", ")}.`
+    : "";
+
+  const user = [
+    `Tone: ${input.tone}.`,
+    `Channel: ${input.channel}. ${input.channelRule}`,
+    mergeLine,
+    "",
+    `Brief: ${input.brief}`,
+  ]
+    .filter(Boolean)
+    .join("\n");
+
+  return { system: MARKETING_SYSTEM_PROMPT, user };
 }

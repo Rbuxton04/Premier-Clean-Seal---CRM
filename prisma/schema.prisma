@@ -545,6 +545,10 @@ enum Channel {
   EMAIL
   SMS
   WHATSAPP
+  FACEBOOK
+  INSTAGRAM
+  LINKEDIN
+  GOOGLE_BUSINESS_PROFILE
 }
 
 enum ReminderStatus {

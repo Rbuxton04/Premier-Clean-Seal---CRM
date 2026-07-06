@@ -579,10 +579,42 @@ async function main() {
           sizeBytes: 0,
         },
       });
+
+      // Milestone 8: a second, due-soon reminder (the 12-month one above is
+      // the "later" one) so the dashboard and "Run reminders now" have
+      // something ready to send immediately.
+      await db.marketingReminder.create({
+        data: {
+          organisationId: org.id,
+          customerId: jracine.id,
+          jobId: job4.id,
+          dueDate: daysFromNow(-1),
+          intervalMonths: 1,
+          channels: jracine.marketingEmail ? ["EMAIL"] : jracine.marketingSms ? ["SMS"] : [],
+          status: "SCHEDULED",
+        },
+      });
     }
 
     await db.organisation.update({ where: { id: org.id }, data: { jobCounter } });
     console.log("Seeded sample jobs.");
+  }
+
+  // Sample AI campaign draft so the marketing dashboard isn't empty.
+  const existingCampaigns = await db.campaign.count({ where: { organisationId: org.id } });
+  if (existingCampaigns === 0) {
+    await db.campaign.create({
+      data: {
+        organisationId: org.id,
+        name: "Friendly Email draft — 12-month reseal reminder",
+        channel: "EMAIL",
+        content:
+          "Hi {firstName},\n\nIt's been about a year since we resealed your bathroom in {colour} — silicone typically starts to wear after 12-18 months, especially somewhere as steamy as a bathroom.\n\nFancy a free check? Just book a slot and we'll take a look: {bookLink}\n\nThanks,\nPremier Clean & Seal",
+        tone: "FRIENDLY",
+        aiGenerated: true,
+      },
+    });
+    console.log("Seeded sample campaign draft.");
   }
 
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);
