@@ -47,6 +47,7 @@ model Organisation {
   auditLogs    AuditLog[]
   permissions  Permission[]
   mediaFiles   MediaFile[]
+  insightReports InsightReport[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -633,6 +634,23 @@ model JobHealthScore {
   band       String // GREEN | YELLOW | RED
   factors    Json
   computedAt DateTime @default(now())
+}
+
+// Milestone 9 — weekly AI business insight reports. periodStart/periodEnd
+// are explicit columns (not folded into `data`) so history can be queried
+// without touching the Json blob; `data` holds the rest of the digest that
+// fed the narrative in `summary`.
+model InsightReport {
+  id             String   @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  periodStart    DateTime
+  periodEnd      DateTime
+  summary        String
+  data           Json
+  createdAt      DateTime @default(now())
+
+  @@index([organisationId, createdAt])
 }
 
 model AuditLog {

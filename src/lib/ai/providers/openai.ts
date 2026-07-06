@@ -3,11 +3,13 @@ import {
   aiAnalysisResultSchema,
   buildPrompt,
   buildMarketingPrompt,
+  buildInsightPrompt,
   ANALYSIS_JSON_SCHEMA,
   type AIProvider,
   type AnalyseInput,
   type AIAnalysisResult,
   type MarketingCopyInput,
+  type BusinessInsightInput,
 } from "../provider";
 
 export class OpenAIProvider implements AIProvider {
@@ -66,6 +68,24 @@ export class OpenAIProvider implements AIProvider {
 
     const text = response.choices[0]?.message?.content?.trim();
     if (!text) throw new Error("OpenAI did not return any copy.");
+    return text;
+  }
+
+  async generateBusinessInsight(input: BusinessInsightInput): Promise<string> {
+    const client = new OpenAI({ apiKey: this.apiKey });
+    const { system, user } = buildInsightPrompt(input);
+
+    const response = await client.chat.completions.create({
+      model: this.model,
+      temperature: 0.4,
+      messages: [
+        { role: "system", content: system },
+        { role: "user", content: user },
+      ],
+    });
+
+    const text = response.choices[0]?.message?.content?.trim();
+    if (!text) throw new Error("OpenAI did not return a report.");
     return text;
   }
 }

@@ -93,9 +93,19 @@ export type MarketingCopyInput = {
   sampleMergeFields?: Record<string, string>;
 };
 
+// Milestone 9 — weekly AI business insight narrative. Also free-text; the
+// digest numbers are computed deterministically beforehand (analytics /
+// insight services) and handed to the model only to be written up in plain
+// English, never recalculated by it.
+export type BusinessInsightInput = {
+  periodLabel: string;
+  digest: Record<string, unknown>;
+};
+
 export interface AIProvider {
   analyseEnquiryImages(input: AnalyseInput): Promise<AIAnalysisResult>;
   generateMarketingCopy(input: MarketingCopyInput): Promise<string>;
+  generateBusinessInsight(input: BusinessInsightInput): Promise<string>;
 }
 
 const SYSTEM_PROMPT = `You are a surveying assistant for a UK silicone-sealant contractor (Premier Clean & Seal, Wigan).
@@ -148,4 +158,14 @@ export function buildMarketingPrompt(input: MarketingCopyInput): { system: strin
     .join("\n");
 
   return { system: MARKETING_SYSTEM_PROMPT, user };
+}
+
+const INSIGHT_SYSTEM_PROMPT = `You are a business analyst for Premier Clean & Seal, a UK silicone-sealant contracting business based in Wigan, England.
+Write a short, plain-English weekly business report from the JSON numbers given to you. Cover whichever of these the data supports: the most profitable jobs or work types, average labour time, the most-used silicone colour, the best-performing technician, customers likely to book again, jobs due a follow-up, and a brief revenue outlook.
+Only use numbers present in the data — never invent figures that are not given to you. Clearly frame any forecast as an estimate, not a guarantee, using words like "roughly" or "on current trends".
+Keep it to 150-250 words, short paragraphs or a few bullet points, no markdown headers, no preamble.`;
+
+export function buildInsightPrompt(input: BusinessInsightInput): { system: string; user: string } {
+  const user = `Reporting period: ${input.periodLabel}\n\nData:\n${JSON.stringify(input.digest, null, 2)}`;
+  return { system: INSIGHT_SYSTEM_PROMPT, user };
 }

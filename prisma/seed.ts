@@ -596,6 +596,110 @@ async function main() {
       });
     }
 
+    // Milestone 9: a few more completed jobs spread across recent months so
+    // the dashboard charts (revenue trend, monthly jobs, top colours/products,
+    // repeat vs new revenue) show more than a single data point.
+    const dowExternal = await db.product.findFirst({ where: { organisationId: org.id, manufacturer: "Dow", name: "791 Weatherproofing" } });
+    const dowWhite = await db.product.findFirst({ where: { organisationId: org.id, manufacturer: "Dow", colour: "White", name: "785+ Bacteria Resistant" } });
+    const sikaWhite = await db.product.findFirst({ where: { organisationId: org.id, manufacturer: "Sika" } });
+
+    if (sarahCustomer && dowExternal) {
+      jobCounter += 1;
+      const job5 = await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber: `#J-000${jobCounter}`,
+          customerId: sarahCustomer.id,
+          propertyId: standishgateFlat?.id,
+          technicianId: danny?.id,
+          status: "COMPLETED",
+          scheduledStart: daysFromNow(-45),
+          scheduledEnd: daysFromNow(-45, 12),
+          actualStart: daysFromNow(-45),
+          actualEnd: daysFromNow(-45, 12),
+          price: 210,
+          depositPaid: 210,
+          balanceDue: 0,
+          paymentStatus: "PAID",
+          metresInstalled: 6,
+          satisfactionRating: 4,
+        },
+      });
+      await db.materialUsage.create({
+        data: { jobId: job5.id, productId: dowExternal.id, applicationArea: "EXTERNAL", quantityUsed: 5, unit: "tubes", cost: 6 },
+      });
+    }
+
+    if (jracine && dowWhite) {
+      jobCounter += 1;
+      const job6 = await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber: `#J-000${jobCounter}`,
+          customerId: jracine.id,
+          propertyId: brambleClose?.id,
+          technicianId: roman?.id,
+          status: "COMPLETED",
+          scheduledStart: daysFromNow(-100),
+          scheduledEnd: daysFromNow(-100, 11),
+          actualStart: daysFromNow(-100),
+          actualEnd: daysFromNow(-100, 11),
+          price: 165,
+          depositPaid: 165,
+          balanceDue: 0,
+          paymentStatus: "PAID",
+          metresInstalled: 7.5,
+          satisfactionRating: 5,
+        },
+      });
+      await db.materialUsage.create({
+        data: { jobId: job6.id, productId: dowWhite.id, applicationArea: "BATHROOM", quantityUsed: 2, unit: "tubes", cost: 4.5 },
+      });
+    }
+
+    if (sarahCustomer && sikaWhite) {
+      jobCounter += 1;
+      const job7 = await db.job.create({
+        data: {
+          organisationId: org.id,
+          jobNumber: `#J-000${jobCounter}`,
+          customerId: sarahCustomer.id,
+          propertyId: theOldMill?.id,
+          technicianId: mia?.id,
+          status: "COMPLETED",
+          scheduledStart: daysFromNow(-20),
+          scheduledEnd: daysFromNow(-20, 15),
+          actualStart: daysFromNow(-20),
+          actualEnd: daysFromNow(-20, 15),
+          price: 340,
+          depositPaid: 100,
+          balanceDue: 240,
+          paymentStatus: "PARTIALLY_PAID",
+          metresInstalled: 12,
+          satisfactionRating: 4,
+        },
+      });
+      await db.materialUsage.create({
+        data: { jobId: job7.id, productId: sikaWhite.id, applicationArea: "KITCHEN", quantityUsed: 8, unit: "tubes", cost: 5 },
+      });
+      await db.invoice.create({
+        data: {
+          invoiceNumber: "#I-0002",
+          customerId: sarahCustomer.id,
+          jobId: job7.id,
+          subtotal: 240,
+          vatApplied: false,
+          vatRatePercent: 0,
+          vatAmount: 0,
+          amount: 240,
+          status: "PARTIALLY_PAID",
+          dueDate: daysFromNow(-6),
+          paidAt: daysFromNow(-18),
+        },
+      });
+      await db.organisation.update({ where: { id: org.id }, data: { invoiceCounter: 2 } });
+    }
+
     await db.organisation.update({ where: { id: org.id }, data: { jobCounter } });
     console.log("Seeded sample jobs.");
   }
@@ -615,6 +719,27 @@ async function main() {
       },
     });
     console.log("Seeded sample campaign draft.");
+  }
+
+  // Sample insight report so the dashboard panel and /insights history
+  // aren't empty on first look.
+  const existingInsightReports = await db.insightReport.count({ where: { organisationId: org.id } });
+  if (existingInsightReports === 0) {
+    const periodEnd = new Date();
+    const periodStart = new Date(periodEnd);
+    periodStart.setDate(periodStart.getDate() - 7);
+
+    await db.insightReport.create({
+      data: {
+        organisationId: org.id,
+        periodStart,
+        periodEnd,
+        summary:
+          "This week: 1 job completed, a modest amount collected. Most-used colour: Jasmine White. Repeat customer rate is building nicely across the Bramble Close and Standishgate properties. A couple of customers look likely to rebook soon based on how long it's been since their last reseal. Enable AI (set AI_API_KEY) for a fuller narrative report and revenue forecast.",
+        data: { seeded: true, note: "Placeholder report — run Generate now for a live one." },
+      },
+    });
+    console.log("Seeded sample insight report.");
   }
 
   console.log(`Seeded organisation "${org.name}" with starter product catalogue.`);

@@ -1,10 +1,56 @@
+import Link from "next/link";
 import { db } from "@/lib/db";
 import { formatGBP } from "@/lib/utils";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
+import { isAiConfigured } from "@/lib/ai";
+import {
+  revenueByMonth,
+  jobsByMonth,
+  leadConversion,
+  topColours,
+  topProducts,
+  repeatRevenueByMonth,
+} from "@/services/analytics.service";
+import { getLatestInsightReport, getQuickStats } from "@/services/insight.service";
+import { RevenueChart } from "@/components/charts/revenue-chart";
+import { MonthlyJobsChart } from "@/components/charts/monthly-jobs-chart";
+import { LeadConversionChart } from "@/components/charts/lead-conversion-chart";
+import { TopColoursChart } from "@/components/charts/top-colours-chart";
+import { TopProductsChart } from "@/components/charts/top-products-chart";
+import { RepeatRevenueChart } from "@/components/charts/repeat-revenue-chart";
+import { GenerateInsightButton } from "../insights/generate-insight-button";
 
 export const dynamic = "force-dynamic";
+
+async function loadCharts(dbOnline: boolean) {
+  if (!dbOnline) return null;
+  try {
+    const [revenue6, revenue12, jobsMonthly, conversion, colours, products, repeatRevenue] = await Promise.all([
+      revenueByMonth(6),
+      revenueByMonth(12),
+      jobsByMonth(12),
+      leadConversion(),
+      topColours(8),
+      topProducts(8),
+      repeatRevenueByMonth(12),
+    ]);
+    return { revenue6, revenue12, jobsMonthly, conversion, colours, products, repeatRevenue };
+  } catch {
+    return null;
+  }
+}
+
+async function loadInsightsPanel(dbOnline: boolean) {
+  if (!dbOnline) return null;
+  try {
+    const [latest, quickStats] = await Promise.all([getLatestInsightReport(), getQuickStats()]);
+    return { latest, quickStats };
+  } catch {
+    return null;
+  }
+}
 
 type Kpi = { label: string; value: string; hint?: string };
 
@@ -61,6 +107,9 @@ async function loadKpis(): Promise<{ kpis: Kpi[]; dbOnline: boolean }> {
 
 export default async function DashboardPage() {
   const { kpis, dbOnline } = await loadKpis();
+  const charts = await loadCharts(dbOnline);
+  const insights = await loadInsightsPanel(dbOnline);
+  const aiConfigured = isAiConfigured();
 
   return (
     <div className="space-y-6">
@@ -91,15 +140,59 @@ export default async function DashboardPage() {
         ))}
       </div>
 
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-sm">Charts</CardTitle>
-        </CardHeader>
-        <CardContent className="text-sm text-muted-foreground">
-          Revenue, monthly jobs, lead conversion, top colours and top products land in Milestone 9,
-          once real quote and job data is flowing through the pipeline.
-        </CardContent>
-      </Card>
+      {charts && (
+        <div className="grid gap-4 lg:grid-cols-2">
+          <RevenueChart data6={charts.revenue6} data12={charts.revenue12} />
+          <MonthlyJobsChart data={charts.jobsMonthly} />
+          <LeadConversionChart data={charts.conversion} />
+          <RepeatRevenueChart data={charts.repeatRevenue} />
+          <TopColoursChart data={charts.colours} />
+          <TopProductsChart data={charts.products} />
+        </div>
+      )}
+
+      {insights && (
+        <Card>
+          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+            <CardTitle className="text-sm">AI business insights</CardTitle>
+            <GenerateInsightButton />
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="grid gap-3 sm:grid-cols-2">
+              <div className="rounded-lg border bg-card px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Due follow-up</p>
+                <p className="font-display text-lg font-semibold">{insights.quickStats.dueFollowUpCount}</p>
+              </div>
+              <div className="rounded-lg border bg-card px-4 py-3">
+                <p className="text-xs uppercase tracking-wide text-muted-foreground">Likely to rebook</p>
+                <p className="font-display text-lg font-semibold">{insights.quickStats.likelyToRebookCount}</p>
+              </div>
+            </div>
+
+            {insights.latest ? (
+              <div>
+                <p className="text-xs text-muted-foreground">
+                  {new Date(insights.latest.periodStart).toLocaleDateString("en-GB")} –{" "}
+                  {new Date(insights.latest.periodEnd).toLocaleDateString("en-GB")}
+                </p>
+                <p className="mt-1 whitespace-pre-wrap text-sm">{insights.latest.summary}</p>
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground">No report yet — generate the first one above.</p>
+            )}
+
+            {!aiConfigured && (
+              <p className="text-xs text-muted-foreground">
+                AI_API_KEY isn&apos;t set — reports use the computed stat summary above rather than a full AI narrative.
+              </p>
+            )}
+
+            <Link href="/insights" className="inline-block text-xs font-medium text-primary hover:underline">
+              View report history →
+            </Link>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }

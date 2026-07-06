@@ -33,6 +33,25 @@ services:
       - key: CRON_SECRET
         sync: false
 
+  # Milestone 9: weekly AI business insight report, same CRON_SECRET pattern
+  # as the marketing cron above. Fires Monday mornings; set APP_URL and
+  # CRON_SECRET the same way once both services are live.
+  - type: cron
+    name: premier-crm-insights-cron
+    runtime: node
+    plan: free
+    schedule: "0 7 * * 1"
+    buildCommand: echo "no build needed"
+    startCommand: >-
+      node -e "fetch(process.env.APP_URL + '/api/cron/insights', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } }).then(r => r.text()).then(t => { console.log(t); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })"
+    envVars:
+      - key: NODE_VERSION
+        value: 20.17.0
+      - key: APP_URL
+        sync: false
+      - key: CRON_SECRET
+        sync: false
+
 databases:
   - name: premier-crm-db
     plan: free
