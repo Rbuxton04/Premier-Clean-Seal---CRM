@@ -22,7 +22,25 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
   const clerkUser = await clerkCurrentUser();
   if (!clerkUser) return null;
 
-  const user = await db.user.findUnique({ where: { clerkId: clerkUser.id } });
+  let user = await db.user.findUnique({ where: { clerkId: clerkUser.id } });
+
+  // The Clerk webhook (/api/webhooks/clerk) is what normally links clerkId
+  // to a User row, but it requires a one-time endpoint setup in the Clerk
+  // dashboard — until that's done (or if the event is simply still in
+  // flight), fall back to matching on primary email and link it here so
+  // sign-in doesn't have a silent dependency on the webhook being wired up.
+  if (!user) {
+    const email =
+      clerkUser.emailAddresses.find((e) => e.id === clerkUser.primaryEmailAddressId)?.emailAddress ??
+      clerkUser.emailAddresses[0]?.emailAddress;
+    if (email) {
+      const byEmail = await db.user.findUnique({ where: { email } });
+      if (byEmail && !byEmail.clerkId) {
+        user = await db.user.update({ where: { id: byEmail.id }, data: { clerkId: clerkUser.id } });
+      }
+    }
+  }
+
   if (!user || !user.active) return null;
 
   return { id: user.id, clerkId: user.clerkId, name: user.name, email: user.email, role: user.role, active: user.active };
