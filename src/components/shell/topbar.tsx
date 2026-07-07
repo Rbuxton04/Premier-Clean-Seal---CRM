@@ -1,5 +1,6 @@
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { AccountMenu } from "@/components/shell/account-menu";
 
 export function Topbar({ devMode }: { devMode: boolean }) {
   return (
@@ -9,6 +10,7 @@ export function Topbar({ devMode }: { devMode: boolean }) {
       </div>
       <div className="ml-auto flex items-center gap-3">
         {devMode && <Badge variant="warning">Open dev mode — add Clerk keys to enable sign-in</Badge>}
+        <AccountMenu devMode={devMode} />
       </div>
     </header>
   );
