@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
-import { geocodeAddress } from "@/services/geocode.service";
+import { geocodeAddress, isWithinGB } from "@/services/geocode.service";
 
 // Explicit hand-written return types — see the Prisma typing note in
 // customer.service.ts.
@@ -70,4 +70,34 @@ export async function ensurePropertyGeocoded(propertyId: string): Promise<{ lati
     data: { latitude: geocoded.latitude, longitude: geocoded.longitude },
   });
   return geocoded;
+}
+
+export type RegeocodeSummary = { checked: number; fixed: number; unresolved: number };
+
+/**
+ * Finds every property in the org with no cached coordinates, or with
+ * coordinates that fall outside Great Britain (a sign of a bad match from
+ * before the proximity/bbox fix in geocode.service.ts), and re-geocodes them
+ * from scratch. Safe to run repeatedly — properties already placed
+ * correctly are left untouched, so it never burns Mapbox quota on addresses
+ * that are already right.
+ */
+export async function regeocodeBadProperties(): Promise<RegeocodeSummary> {
+  const properties = await db.property.findMany({
+    where: { customer: { organisationId: ORG_ID, deletedAt: null } },
+    select: { id: true, addressLine1: true, city: true, postcode: true, latitude: true, longitude: true },
+  });
+
+  const bad = properties.filter((p) => p.latitude == null || p.longitude == null || !isWithinGB(p.latitude, p.longitude));
+
+  let fixed = 0;
+  for (const property of bad) {
+    const address = [property.addressLine1, property.city, property.postcode, "UK"].filter(Boolean).join(", ");
+    const geocoded = await geocodeAddress(address);
+    if (!geocoded) continue;
+    await db.property.update({ where: { id: property.id }, data: { latitude: geocoded.latitude, longitude: geocoded.longitude } });
+    fixed++;
+  }
+
+  return { checked: bad.length, fixed, unresolved: bad.length - fixed };
 }

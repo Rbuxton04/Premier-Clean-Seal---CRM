@@ -64,6 +64,7 @@ export default async function MapPage({ searchParams }: { searchParams: { date?:
           lockTechnician={user?.role === "TECHNICIAN"}
           canPlanForOthers={user?.role === "ADMIN" || user?.role === "OFFICE"}
           selfTechnicianId={user?.role === "TECHNICIAN" ? user.id : null}
+          canRegeocode={user?.role === "ADMIN"}
           mapboxPublicToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""}
         />
       )}

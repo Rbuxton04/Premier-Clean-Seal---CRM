@@ -5,8 +5,9 @@ import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import Link from "next/link";
 import type { Map as MapboxMap, Marker as MapboxMarker } from "mapbox-gl";
-import { MapPinOff } from "lucide-react";
+import { MapPinOff, Wrench, Loader2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
+import { Button } from "@/components/ui/button";
 import { Select } from "@/components/ui/select";
 import { Input } from "@/components/ui/input";
 import { jobStatusLabels } from "@/validators/job";
@@ -14,6 +15,7 @@ import type { MapJobItem } from "@/services/map.service";
 import type { TechnicianOption } from "@/services/job.service";
 import type { PlanRouteResult } from "@/services/route.service";
 import { PlanDayPanel } from "./plan-day-panel";
+import { regeocodeBadPropertiesAction } from "./actions";
 
 // Home view for the map: Leigh, Greater Manchester, at a zoom that comfortably
 // shows Leigh plus surrounding towns (Wigan, Atherton, Tyldesley, Hindley,
@@ -48,6 +50,7 @@ export function MapView({
   lockTechnician,
   canPlanForOthers,
   selfTechnicianId,
+  canRegeocode,
   mapboxPublicToken,
 }: {
   dateISO: string;
@@ -57,6 +60,7 @@ export function MapView({
   lockTechnician: boolean;
   canPlanForOthers: boolean;
   selfTechnicianId: string | null;
+  canRegeocode: boolean;
   mapboxPublicToken: string;
 }) {
   const router = useRouter();
@@ -66,6 +70,20 @@ export function MapView({
   const routeMarkersRef = useRef<MapboxMarker[]>([]);
   const [mapReady, setMapReady] = useState(false);
   const [planResult, setPlanResult] = useState<PlanRouteResult | null>(null);
+  const [regeocoding, setRegeocoding] = useState(false);
+  const [regeocodeSummary, setRegeocodeSummary] = useState<string | null>(null);
+
+  async function handleRegeocode() {
+    setRegeocoding(true);
+    setRegeocodeSummary(null);
+    const result = await regeocodeBadPropertiesAction();
+    setRegeocodeSummary(
+      `Checked ${result.checked} propert${result.checked === 1 ? "y" : "ies"} needing a fix — corrected ${result.fixed}` +
+        (result.unresolved > 0 ? `, ${result.unresolved} still unresolved.` : ".")
+    );
+    setRegeocoding(false);
+    router.refresh();
+  }
 
   function updateQuery(next: { date?: string; technicianId?: string | null }) {
     const params = new URLSearchParams();
@@ -275,7 +293,15 @@ export function MapView({
             Pins coloured by technician. {jobs.length} job{jobs.length === 1 ? "" : "s"} today.
           </span>
         )}
+        {canRegeocode && (
+          <Button size="sm" variant="outline" onClick={handleRegeocode} disabled={regeocoding} className="ml-auto">
+            {regeocoding ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : <Wrench className="h-3.5 w-3.5" />}
+            Fix pin locations
+          </Button>
+        )}
       </div>
+
+      {regeocodeSummary && <Badge variant="warning">{regeocodeSummary}</Badge>}
 
       <div className="flex flex-col gap-4 lg:flex-row">
         <div className="relative h-[50vh] min-h-[320px] flex-1 overflow-hidden rounded-lg border lg:h-[600px]">

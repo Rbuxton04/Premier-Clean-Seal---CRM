@@ -1,9 +1,11 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
+import { requireAdmin } from "@/lib/permissions";
 import { planDayInputSchema, geocodeAddressInputSchema } from "@/validators/route";
 import { planRoute, type PlanRouteResult } from "@/services/route.service";
 import { geocodeAddress, type GeocodeResult } from "@/services/geocode.service";
+import { regeocodeBadProperties, type RegeocodeSummary } from "@/services/map.service";
 
 /**
  * "Plan my day" is available to the office (any technician) and to a
@@ -40,4 +42,14 @@ export async function geocodeOriginAction(input: unknown): Promise<GeocodeResult
   const user = await getCurrentUser();
   if (!user) return null;
   return geocodeAddress(parsed.data.address);
+}
+
+/**
+ * Admin-only "fix pin locations": re-geocodes every property in the org
+ * with missing coordinates or coordinates outside Great Britain (the
+ * signature of a bad match from before the proximity/bbox geocoding fix).
+ */
+export async function regeocodeBadPropertiesAction(): Promise<RegeocodeSummary> {
+  await requireAdmin();
+  return regeocodeBadProperties();
 }
