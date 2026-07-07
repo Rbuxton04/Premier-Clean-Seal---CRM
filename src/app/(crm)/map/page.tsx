@@ -2,7 +2,7 @@ import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { getCurrentUser } from "@/lib/auth";
 import { listTechnicians, type TechnicianOption } from "@/services/job.service";
-import { listJobsForMap, type MapJobItem } from "@/services/map.service";
+import { listJobsForMap, ensurePropertyGeocoded, type MapJobItem } from "@/services/map.service";
 import { MapView } from "./map-view";
 
 export const dynamic = "force-dynamic";
@@ -16,6 +16,16 @@ function todayISO(): string {
 async function loadMapData(dateISO: string, technicianId?: string) {
   try {
     const [technicians, jobs] = await Promise.all([listTechnicians(), listJobsForMap(dateISO, technicianId)]);
+
+    // Pins render immediately with whatever coordinates are already cached —
+    // any property missing lat/lng gets geocoded here without blocking this
+    // response, so a slow lookup never holds up the map. It'll simply show up
+    // once cached, on the next load.
+    const ungeocoded = jobs.filter((job) => job.property && (job.property.latitude == null || job.property.longitude == null));
+    if (ungeocoded.length > 0) {
+      void Promise.all(ungeocoded.map((job) => ensurePropertyGeocoded(job.property!.id))).catch(() => {});
+    }
+
     return { technicians, jobs, dbOnline: true };
   } catch {
     return { technicians: [] as TechnicianOption[], jobs: [] as MapJobItem[], dbOnline: false };

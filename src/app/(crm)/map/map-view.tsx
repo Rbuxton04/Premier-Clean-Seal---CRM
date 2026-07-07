@@ -15,6 +15,13 @@ import type { TechnicianOption } from "@/services/job.service";
 import type { PlanRouteResult } from "@/services/route.service";
 import { PlanDayPanel } from "./plan-day-panel";
 
+// Home view for the map: Leigh, Greater Manchester, at a zoom that comfortably
+// shows Leigh plus surrounding towns (Wigan, Atherton, Tyldesley, Hindley,
+// Golborne) — most jobs fall in this area. Used on first load before any
+// pins are plotted, and as the resting view whenever there are none.
+const DEFAULT_CENTER: [number, number] = [-2.5178, 53.4975];
+const DEFAULT_ZOOM = 11;
+
 const STATUS_COLORS: Record<string, string> = {
   BOOKED: "#0284C7",
   IN_PROGRESS: "#3C2263",
@@ -79,8 +86,8 @@ export function MapView({
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
         style: "mapbox://styles/mapbox/light-v11",
-        center: [-2.5, 53.7],
-        zoom: 5.5,
+        center: DEFAULT_CENTER,
+        zoom: DEFAULT_ZOOM,
       });
       map.addControl(new mapboxgl.NavigationControl(), "top-right");
       map.on("load", () => setMapReady(true));
@@ -104,7 +111,7 @@ export function MapView({
       markersRef.current = [];
 
       const bounds = new mapboxgl.LngLatBounds();
-      let hasPoint = false;
+      const points: [number, number][] = [];
 
       for (const job of jobs) {
         const lat = job.property?.latitude;
@@ -126,15 +133,24 @@ export function MapView({
         const marker = new mapboxgl.Marker({ color }).setLngLat([lng, lat]).setPopup(popup).addTo(mapRef.current);
         markersRef.current.push(marker);
         bounds.extend([lng, lat]);
-        hasPoint = true;
+        points.push([lng, lat]);
       }
 
-      if (hasPoint) {
+      if (points.length === 1) {
+        // A single pin — centre on it, but not at a street-level zoom.
+        mapRef.current.easeTo({ center: points[0], zoom: 14, duration: 0 });
+      } else if (points.length > 1) {
         try {
+          // maxZoom keeps a tight cluster of jobs (e.g. all within Leigh)
+          // resting close to the default home view rather than zooming in
+          // past street level.
           mapRef.current.fitBounds(bounds, { padding: 60, maxZoom: 13, duration: 0 });
         } catch {
           // Empty/degenerate bounds — ignore.
         }
+      } else {
+        // No jobs with coordinates today — rest on the Leigh home view.
+        mapRef.current.easeTo({ center: DEFAULT_CENTER, zoom: DEFAULT_ZOOM, duration: 0 });
       }
     })();
     return () => {
