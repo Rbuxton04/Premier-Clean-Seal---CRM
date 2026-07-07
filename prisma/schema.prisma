@@ -155,6 +155,11 @@ model Property {
   postcode     String
   propertyType PropertyType @default(RESIDENTIAL)
   notes        String?
+  // Cached Mapbox geocode result (Milestone 13 — job map). Set once on first
+  // lookup and reused forever unless the address changes, to protect the
+  // Mapbox free tier from repeat geocoding on every map load.
+  latitude     Float?
+  longitude    Float?
   createdAt    DateTime @default(now())
   jobs         Job[]
   enquiries    Enquiry[]

@@ -5,7 +5,7 @@ import Image from "next/image";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, Inbox, Users, FileText, Wrench, CalendarDays,
-  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Settings,
+  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Settings, Map,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { BrandSwoosh } from "./brand-swoosh";
@@ -18,6 +18,7 @@ const nav = [
   { href: "/quotes", label: "Quotes", icon: FileText },
   { href: "/jobs", label: "Jobs", icon: Wrench },
   { href: "/calendar", label: "Calendar", icon: CalendarDays },
+  { href: "/map", label: "Map", icon: Map },
   { href: "/gallery", label: "Gallery", icon: Images },
   { href: "/documents", label: "Documents", icon: FolderOpen },
   { href: "/invoices", label: "Invoices", icon: Receipt },
@@ -30,7 +31,9 @@ const nav = [
 
 // TECHNICIAN's day-to-day is assigned jobs + completion — the rest of the
 // nav (customers, quotes, invoices, marketing, etc.) is office/admin territory.
-const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/calendar", "/gallery", "/documents"]);
+// Map is included since "Plan my day" + navigation hand-off is squarely a
+// technician, on-the-phone feature.
+const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/calendar", "/map", "/gallery", "/documents"]);
 
 export function Sidebar({ role }: { role: Role | null }) {
   const pathname = usePathname();

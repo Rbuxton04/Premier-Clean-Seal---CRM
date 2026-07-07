@@ -358,6 +358,21 @@ async function main() {
     const standishgateFlat = sarahCustomer ? await db.property.findFirst({ where: { customerId: sarahCustomer.id, addressLine1: "Flat 2, 88 Standishgate" } }) : null;
     const theOldMill = sarahCustomer ? await db.property.findFirst({ where: { customerId: sarahCustomer.id, addressLine1: "The Old Mill, Unit 4" } }) : null;
 
+    // Milestone 13 — pre-fill known Wigan coordinates so the job map shows
+    // pins immediately without a live Mapbox geocode call on first load.
+    const seedCoords: Array<{ id: string | undefined; latitude: number; longitude: number }> = [
+      { id: brambleClose?.id, latitude: 53.5372, longitude: -2.6218 },
+      { id: standishgateFlat?.id, latitude: 53.5455, longitude: -2.6318 },
+      { id: theOldMill?.id, latitude: 53.529, longitude: -2.649 },
+    ];
+    for (const c of seedCoords) {
+      if (!c.id) continue;
+      await db.property.updateMany({
+        where: { id: c.id, latitude: null },
+        data: { latitude: c.latitude, longitude: c.longitude },
+      });
+    }
+
     const approvedQuote = await db.quote.findFirst({ where: { organisationId: org.id, quoteNumber: "#Q-0003" } });
 
     const today = new Date();
@@ -419,8 +434,10 @@ async function main() {
           propertyId: brambleClose?.id,
           technicianId: roman?.id,
           status: "BOOKED",
-          scheduledStart: daysFromNow(1),
-          scheduledEnd: daysFromNow(1, 12),
+          // Scheduled today (not tomorrow) so the job map has a pin to show
+          // by default without the user having to change the date.
+          scheduledStart: daysFromNow(0),
+          scheduledEnd: daysFromNow(0, 12),
           price: 180,
           depositPaid: 0,
           balanceDue: 180,
