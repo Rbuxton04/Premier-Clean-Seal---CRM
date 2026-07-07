@@ -53,8 +53,14 @@ export type PlanRouteInput = {
 
 type StopCandidate = { job: MapJobItem; latitude: number; longitude: number };
 
+// Full postal address including postcode — this is the single source of
+// truth used both for the on-screen stop list and, in nav-links.ts, for the
+// Google/Apple Maps navigation hand-off. Passing the complete address
+// (rather than bare coordinates) anchors the maps app to the exact
+// property, since a raw lat/lng gets reverse-geocoded and can resolve to a
+// neighbouring house number.
 function formatAddress(property: NonNullable<MapJobItem["property"]>): string {
-  return [property.addressLine1, property.city, property.postcode].filter(Boolean).join(", ");
+  return [property.addressLine1, property.addressLine2, property.city, property.postcode].filter(Boolean).join(", ");
 }
 
 export async function planRoute(input: PlanRouteInput): Promise<PlanRouteResult> {

@@ -13,6 +13,7 @@ export type MapJobItem = {
   property: {
     id: string;
     addressLine1: string;
+    addressLine2: string | null;
     city: string | null;
     postcode: string;
     latitude: number | null;
@@ -40,7 +41,9 @@ export async function listJobsForMap(dateISO: string, technicianId?: string): Pr
     },
     include: {
       customer: { select: { id: true, name: true } },
-      property: { select: { id: true, addressLine1: true, city: true, postcode: true, latitude: true, longitude: true } },
+      property: {
+        select: { id: true, addressLine1: true, addressLine2: true, city: true, postcode: true, latitude: true, longitude: true },
+      },
       technician: { select: { id: true, name: true } },
     },
     orderBy: { scheduledStart: "asc" },
