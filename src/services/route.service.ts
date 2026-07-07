@@ -1,13 +1,20 @@
 import { isMapboxServerConfigured, isWithinGB } from "@/services/geocode.service";
 import { listJobsForMap, ensurePropertyGeocoded, type MapJobItem } from "@/services/map.service";
 
-// Mapbox Optimization API v1 accepts at most 12 coordinates per request
-// (origin + up to 11 stops). Days with more stops than that are optimised
-// in consecutive batches, chaining each batch's last stop as the next
-// batch's origin — not a globally optimal tour across the whole day, but a
-// pragmatic approximation that never errors, and at current volume
+// The Mapbox Optimization API (true TSP solving) isn't available on this
+// account's plan/token — calling it returns "NotImplemented". The Directions
+// API is available and gives real drive times/geometry, but it doesn't
+// reorder waypoints itself, so visiting order is decided locally (nearest
+// neighbour, see nearestNeighbourOrder below) before a single Directions
+// call fills in the actual route.
+//
+// The Directions API accepts at most 25 coordinates per request (origin +
+// up to 24 stops). Days with more stops than that are routed in consecutive
+// batches, chaining each batch's last stop as the next batch's origin — not
+// a globally optimal tour across the whole day, but a pragmatic
+// approximation that never errors, and at current volume
 // (~10 stops/technician/day) this path won't even trigger.
-const MAX_STOPS_PER_BATCH = 11;
+const MAX_STOPS_PER_BATCH = 24;
 
 export type RouteStop = {
   jobId: string;
@@ -184,9 +191,10 @@ type OptimizeResult =
   | { ok: false; reason: string };
 
 async function planOptimizedRoute(origin: { latitude: number; longitude: number }, stops: StopCandidate[]): Promise<OptimizeResult> {
-  if (stops.length <= MAX_STOPS_PER_BATCH) {
-    return callMapboxOptimization(origin, stops);
-  }
+  // Decide the whole day's visiting order up front (nearest neighbour from
+  // the origin), then route it in batches of at most MAX_STOPS_PER_BATCH —
+  // batching only affects how many Directions calls it takes, not the order.
+  const ordered = nearestNeighbourOrder(origin, stops);
 
   let currentOrigin = origin;
   const orderedStops: StopCandidate[] = [];
@@ -195,9 +203,9 @@ async function planOptimizedRoute(origin: { latitude: number; longitude: number 
   let totalDistance = 0;
   let totalDuration = 0;
 
-  for (let i = 0; i < stops.length; i += MAX_STOPS_PER_BATCH) {
-    const chunk = stops.slice(i, i + MAX_STOPS_PER_BATCH);
-    const result = await callMapboxOptimization(currentOrigin, chunk);
+  for (let i = 0; i < ordered.length; i += MAX_STOPS_PER_BATCH) {
+    const chunk = ordered.slice(i, i + MAX_STOPS_PER_BATCH);
+    const result = await callMapboxDirections(currentOrigin, chunk);
     if (!result.ok) return result;
     orderedStops.push(...result.orderedStops);
     legs.push(...result.legs);
@@ -211,84 +219,136 @@ async function planOptimizedRoute(origin: { latitude: number; longitude: number 
   return { ok: true, orderedStops, legs, geometryCoords, totalDistance, totalDuration };
 }
 
+/** Great-circle distance in metres — used only to build a local visiting order, never sent to Mapbox. */
+function haversineMeters(a: { latitude: number; longitude: number }, b: { latitude: number; longitude: number }): number {
+  const R = 6371000;
+  const toRad = (deg: number) => (deg * Math.PI) / 180;
+  const dLat = toRad(b.latitude - a.latitude);
+  const dLng = toRad(b.longitude - a.longitude);
+  const sinLat = Math.sin(dLat / 2);
+  const sinLng = Math.sin(dLng / 2);
+  const h = sinLat * sinLat + Math.cos(toRad(a.latitude)) * Math.cos(toRad(b.latitude)) * sinLng * sinLng;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
 /**
- * Single Mapbox Optimization API call: origin fixed as the start
- * (source=first), no forced end point (destination defaults to "any" so the
- * algorithm can end wherever is genuinely closest), no return leg
- * (roundtrip=false) since a technician doesn't need to drive home between
- * jobs. Uses the plain "driving" profile — Optimization API v1 doesn't
- * support the traffic-aware "driving-traffic" profile (that requires
- * Mapbox's newer async Optimization v2 API, out of scope here).
+ * Greedy nearest-neighbour visiting order. The Directions API (unlike the
+ * unavailable Optimization API) doesn't reorder waypoints itself, so this
+ * decides the order locally from straight-line distance before the single
+ * Directions call below fills in real roads/times for that fixed order.
+ * Not a globally optimal tour, but a solid approximation at the stop counts
+ * a technician actually has in a day.
  */
-async function callMapboxOptimization(
+function nearestNeighbourOrder(origin: { latitude: number; longitude: number }, stops: StopCandidate[]): StopCandidate[] {
+  const remaining = [...stops];
+  const ordered: StopCandidate[] = [];
+  let current: { latitude: number; longitude: number } = origin;
+  while (remaining.length > 0) {
+    let bestIndex = 0;
+    let bestDistance = Infinity;
+    for (let i = 0; i < remaining.length; i++) {
+      const distance = haversineMeters(current, remaining[i]);
+      if (distance < bestDistance) {
+        bestDistance = distance;
+        bestIndex = i;
+      }
+    }
+    const [next] = remaining.splice(bestIndex, 1);
+    ordered.push(next);
+    current = next;
+  }
+  return ordered;
+}
+
+/**
+ * Single Mapbox Directions API call over a fixed, already-ordered list of
+ * stops — returns real drive legs + route geometry for that order. Tries
+ * the traffic-aware "driving-traffic" profile first (not available on every
+ * account/region) and falls back to plain "driving" on any failure from
+ * that first attempt, since a live-traffic estimate is a nice-to-have, not
+ * something worth failing the whole route over.
+ */
+async function callMapboxDirections(
   origin: { latitude: number; longitude: number },
-  stops: StopCandidate[]
+  orderedStops: StopCandidate[]
 ): Promise<OptimizeResult> {
   const token = process.env.MAPBOX_SECRET_TOKEN;
   if (!token) return { ok: false, reason: "MAPBOX_SECRET_TOKEN is not set" };
 
   // Mapbox coordinate order is always longitude,latitude — a lat/lng swap
-  // here would both misplace pins and make every optimisation call fail.
-  const coords = [origin, ...stops].map((p) => `${p.longitude},${p.latitude}`).join(";");
-  const url =
-    `https://api.mapbox.com/optimized-trips/v1/mapbox/driving/${coords}` +
-    `?geometries=geojson&overview=full&roundtrip=false&source=first&access_token=${token}`;
+  // here would both misplace pins and make every routing call fail.
+  const coords = [origin, ...orderedStops].map((p) => `${p.longitude},${p.latitude}`).join(";");
 
-  try {
+  async function requestProfile(profile: "driving-traffic" | "driving") {
+    const url =
+      `https://api.mapbox.com/directions/v5/mapbox/${profile}/${coords}` +
+      `?geometries=geojson&overview=full&steps=false&access_token=${token}`;
     const res = await fetch(url);
     const bodyText = await res.text();
+    return { res, bodyText };
+  }
+
+  try {
+    let { res, bodyText } = await requestProfile("driving-traffic");
+    let parsed = safeParseJson(bodyText);
+    if (!res.ok || parsed?.code !== "Ok") {
+      // driving-traffic unavailable/unsupported here — retry with the
+      // baseline profile before treating this as a real failure.
+      ({ res, bodyText } = await requestProfile("driving"));
+      parsed = safeParseJson(bodyText);
+    }
 
     if (!res.ok) {
-      console.error(`Mapbox Optimization API failed: HTTP ${res.status} - ${bodyText}`);
+      console.error(`Mapbox Directions API failed: HTTP ${res.status} - ${bodyText}`);
       if (res.status === 401 || res.status === 403) {
         return { ok: false, reason: "check MAPBOX_SECRET_TOKEN scopes/validity" };
       }
       return { ok: false, reason: `HTTP ${res.status}: ${bodyText.slice(0, 200)}` };
     }
 
-    const data = JSON.parse(bodyText) as {
+    const data = parsed as {
       code?: string;
       message?: string;
-      trips?: Array<{
+      routes?: Array<{
         geometry: { coordinates: [number, number][] };
         legs: Array<{ distance: number; duration: number }>;
         distance: number;
         duration: number;
       }>;
-      waypoints?: Array<{ waypoint_index: number }>;
-    };
+    } | null;
 
-    if (data.code !== "Ok" || !data.trips?.[0] || !data.waypoints) {
-      const reason = `Mapbox returned ${data.code ?? "an unknown error"}${data.message ? `: ${data.message}` : ""}`;
-      console.error(`Mapbox Optimization API error: ${reason}`);
+    if (!data || data.code !== "Ok" || !data.routes?.[0]) {
+      const reason = `Mapbox returned ${data?.code ?? "an unknown error"}${data?.message ? `: ${data.message}` : ""}`;
+      console.error(`Mapbox Directions API error: ${reason}`);
       return { ok: false, reason };
     }
 
-    const trip = data.trips[0];
-    // waypoints[0] is the origin (forced first); waypoints[1..] align by
-    // input order with `stops` — each carries the stop's position in the
-    // optimised visiting order.
-    const stopWaypoints = data.waypoints.slice(1);
-    if (stopWaypoints.length !== stops.length) {
-      return { ok: false, reason: "Mapbox returned an unexpected number of waypoints" };
+    const route = data.routes[0];
+    // Coordinates are [origin, ...orderedStops], so there's one leg per
+    // stop: legs[i] is the drive arriving at orderedStops[i].
+    if (route.legs.length !== orderedStops.length) {
+      return { ok: false, reason: "Mapbox returned an unexpected number of legs" };
     }
-
-    const orderedStops = stops
-      .map((stop, i) => ({ stop, visitIndex: stopWaypoints[i].waypoint_index }))
-      .sort((a, b) => a.visitIndex - b.visitIndex)
-      .map(({ stop }) => stop);
 
     return {
       ok: true,
       orderedStops,
-      legs: trip.legs,
-      geometryCoords: trip.geometry.coordinates,
-      totalDistance: trip.distance,
-      totalDuration: trip.duration,
+      legs: route.legs,
+      geometryCoords: route.geometry.coordinates,
+      totalDistance: route.distance,
+      totalDuration: route.duration,
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message : "network error";
-    console.error("Mapbox Optimization API request threw:", err);
+    console.error("Mapbox Directions API request threw:", err);
     return { ok: false, reason };
+  }
+}
+
+function safeParseJson(text: string): { code?: string; message?: string } | null {
+  try {
+    return JSON.parse(text) as { code?: string; message?: string };
+  } catch {
+    return null;
   }
 }
