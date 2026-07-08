@@ -127,6 +127,17 @@ export function MapView({
       mapRef.current?.resize();
     }
 
+    // Explicit belt-and-braces for the lg breakpoint (1024px) specifically,
+    // where the layout flips between flex-row (2-column) and flex-col
+    // (stacked) — the ResizeObserver already catches the resulting size
+    // change, but two rAFs here give the CSS media-query flip and the
+    // resulting reflow a moment to fully settle before re-measuring.
+    const breakpoint = window.matchMedia("(min-width: 1024px)");
+    function handleBreakpointChange(): void {
+      requestAnimationFrame(() => requestAnimationFrame(() => mapRef.current?.resize()));
+    }
+    breakpoint.addEventListener("change", handleBreakpointChange);
+
     (async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
       if (cancelled || !mapContainerRef.current) return;
@@ -169,6 +180,7 @@ export function MapView({
       resizeObserver?.disconnect();
       window.removeEventListener("resize", handleWindowResize);
       window.removeEventListener("orientationchange", handleWindowResize);
+      breakpoint.removeEventListener("change", handleBreakpointChange);
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -373,11 +385,16 @@ export function MapView({
       {regeocodeSummary && <Badge variant="warning">{regeocodeSummary}</Badge>}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        {/* w-full alongside flex-1 keeps width explicit rather than relying
-            purely on flex cross-axis stretch; min-h is a hard floor a flex
-            item's computed height can never shrink below, so this pane
-            always has real, non-zero dimensions for Mapbox to measure. */}
-        <div className="relative h-[60vh] min-h-[360px] w-full flex-1 overflow-hidden rounded-lg border lg:h-[600px]">
+        {/* flex-1 is lg-only deliberately: in the lg:flex-row (2-column)
+            layout, flex-1's flex-basis:0% governs WIDTH (the row's main
+            axis), so it composes fine with the explicit lg:h-[600px]. But
+            below lg the layout is flex-col, where flex-basis:0% governs
+            HEIGHT instead -- applying flex-1 there overrides h-[60vh]
+            entirely (flex-basis wins over the height property on the main
+            axis), leaving only the min-h floor in effect and shrinking the
+            pane far below its intended height. Keeping flex-1 lg-only lets
+            the plain h-[60vh]/min-h-[360px] apply untouched when stacked. */}
+        <div className="relative h-[60vh] min-h-[360px] w-full overflow-hidden rounded-lg border lg:h-[600px] lg:flex-1">
           <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
           {jobs.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70">
