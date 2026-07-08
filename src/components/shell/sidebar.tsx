@@ -10,23 +10,47 @@ import {
 import { cn } from "@/lib/utils";
 import { BrandSwoosh } from "./brand-swoosh";
 import type { Role } from "@prisma/client";
+import type { LucideIcon } from "lucide-react";
 
-const nav = [
-  { href: "/dashboard", label: "Dashboard", icon: LayoutDashboard },
-  { href: "/enquiries", label: "Enquiries", icon: Inbox },
-  { href: "/customers", label: "Customers", icon: Users },
-  { href: "/quotes", label: "Quotes", icon: FileText },
-  { href: "/jobs", label: "Jobs", icon: Wrench },
-  { href: "/calendar", label: "Calendar", icon: CalendarDays },
-  { href: "/map", label: "Map", icon: Map },
-  { href: "/gallery", label: "Gallery", icon: Images },
-  { href: "/documents", label: "Documents", icon: FolderOpen },
-  { href: "/invoices", label: "Invoices", icon: Receipt },
-  { href: "/warranties", label: "Warranties", icon: ShieldCheck },
-  { href: "/materials", label: "Materials", icon: Layers },
-  { href: "/marketing", label: "Marketing", icon: Megaphone },
-  { href: "/insights", label: "Insights", icon: Sparkles },
-  { href: "/search", label: "AI Search", icon: Search },
+type NavItem = { href: string; label: string; icon: LucideIcon };
+type NavGroup = { heading: string | null; items: NavItem[] };
+
+const navGroups: NavGroup[] = [
+  { heading: null, items: [{ href: "/dashboard", label: "Dashboard", icon: LayoutDashboard }] },
+  {
+    heading: "SALES",
+    items: [
+      { href: "/enquiries", label: "Enquiries", icon: Inbox },
+      { href: "/customers", label: "Customers", icon: Users },
+      { href: "/quotes", label: "Quotes", icon: FileText },
+    ],
+  },
+  {
+    heading: "OPERATIONS",
+    items: [
+      { href: "/jobs", label: "Jobs", icon: Wrench },
+      { href: "/calendar", label: "Calendar", icon: CalendarDays },
+      { href: "/map", label: "Map", icon: Map },
+    ],
+  },
+  {
+    heading: "RECORDS",
+    items: [
+      { href: "/gallery", label: "Gallery", icon: Images },
+      { href: "/documents", label: "Documents", icon: FolderOpen },
+      { href: "/invoices", label: "Invoices", icon: Receipt },
+      { href: "/warranties", label: "Warranties", icon: ShieldCheck },
+      { href: "/materials", label: "Materials", icon: Layers },
+    ],
+  },
+  {
+    heading: "GROWTH",
+    items: [
+      { href: "/marketing", label: "Marketing", icon: Megaphone },
+      { href: "/insights", label: "Insights", icon: Sparkles },
+      { href: "/search", label: "AI Search", icon: Search },
+    ],
+  },
 ];
 
 // TECHNICIAN's day-to-day is assigned jobs + completion — the rest of the
@@ -37,7 +61,12 @@ const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/calendar", "/map", "/galler
 
 export function Sidebar({ role }: { role: Role | null }) {
   const pathname = usePathname();
-  const items = role === "TECHNICIAN" ? nav.filter((item) => TECHNICIAN_ALLOWED_HREFS.has(item.href)) : nav;
+  const groups =
+    role === "TECHNICIAN"
+      ? navGroups
+          .map((group) => ({ ...group, items: group.items.filter((item) => TECHNICIAN_ALLOWED_HREFS.has(item.href)) }))
+          .filter((group) => group.items.length > 0)
+      : navGroups;
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col bg-brand-slate-ink text-brand-silver">
@@ -50,25 +79,36 @@ export function Sidebar({ role }: { role: Role | null }) {
         </div>
       </div>
 
-      <nav className="mt-2 flex-1 space-y-0.5 px-3" aria-label="Main">
-        {items.map(({ href, label, icon: Icon }) => {
-          const active = pathname.startsWith(href);
-          return (
-            <Link
-              key={href}
-              href={href}
-              className={cn(
-                "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
-                active
-                  ? "bg-brand-plum text-white"
-                  : "text-brand-silver/85 hover:bg-white/5 hover:text-white"
-              )}
-            >
-              <Icon className="h-4 w-4" aria-hidden />
-              {label}
-            </Link>
-          );
-        })}
+      <nav className="mt-2 flex-1 space-y-0.5 overflow-y-auto px-3" aria-label="Main">
+        {groups.map((group, groupIndex) => (
+          <div key={group.heading ?? `group-${groupIndex}`} className={groupIndex > 0 ? "pt-4" : undefined}>
+            {group.heading && (
+              <p className="px-3 pb-1 text-[11px] font-semibold uppercase tracking-widest text-[#8A9099]">
+                {group.heading}
+              </p>
+            )}
+            <div className="space-y-0.5">
+              {group.items.map(({ href, label, icon: Icon }) => {
+                const active = pathname.startsWith(href);
+                return (
+                  <Link
+                    key={href}
+                    href={href}
+                    className={cn(
+                      "flex items-center gap-3 rounded-md px-3 py-2 text-sm transition-colors",
+                      active
+                        ? "bg-brand-plum text-white"
+                        : "text-brand-silver/85 hover:bg-white/5 hover:text-white"
+                    )}
+                  >
+                    <Icon className="h-4 w-4" aria-hidden />
+                    {label}
+                  </Link>
+                );
+              })}
+            </div>
+          </div>
+        ))}
       </nav>
 
       <div className="border-t border-white/10 p-3">
