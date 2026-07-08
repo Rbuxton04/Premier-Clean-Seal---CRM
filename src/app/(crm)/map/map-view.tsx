@@ -24,6 +24,12 @@ import { regeocodeBadPropertiesAction } from "./actions";
 const DEFAULT_CENTER: [number, number] = [-2.5178, 53.4975];
 const DEFAULT_ZOOM = 11;
 
+// Business's custom Mapbox style, configurable via NEXT_PUBLIC_MAPBOX_STYLE
+// without a code change — falls back to a stock Mapbox style if unset. This
+// is a NEXT_PUBLIC_ var, so it's baked in at build time: changing it in
+// Render requires a redeploy, not just an env var save.
+const MAP_STYLE = process.env.NEXT_PUBLIC_MAPBOX_STYLE || "mapbox://styles/mapbox/light-v11";
+
 const STATUS_COLORS: Record<string, string> = {
   BOOKED: "#0284C7",
   IN_PROGRESS: "#3C2263",
@@ -103,7 +109,7 @@ export function MapView({
       mapboxgl.accessToken = mapboxPublicToken;
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
-        style: "mapbox://styles/mapbox/light-v11",
+        style: MAP_STYLE,
         center: DEFAULT_CENTER,
         zoom: DEFAULT_ZOOM,
       });
