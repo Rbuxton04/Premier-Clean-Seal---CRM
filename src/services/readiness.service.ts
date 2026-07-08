@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
 import { clerkEnabled } from "@/lib/auth";
-import { isR2Configured } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured } from "@/lib/storage/supabase";
 import { isResendConfigured } from "@/lib/email/resend";
 import { getLastBackupAt } from "@/services/backup.service";
 
@@ -59,20 +59,20 @@ export async function computeReadiness(): Promise<ReadinessItem[]> {
     detail: "Public forms (enquiry, portal message/request, quote approval) are rate-limited per IP.",
   });
 
-  if (!isR2Configured()) {
+  if (!isSupabaseStorageConfigured()) {
     items.push({
       id: "backups",
       label: "Daily backups",
       status: "amber",
-      detail: "R2 isn't configured, so the backup cron no-ops.",
-      howToFix: "Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET, then add the Render Cron Job from render.yaml.",
+      detail: "Storage isn't configured, so the backup cron no-ops.",
+      howToFix: "Set NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET, then add the Render Cron Job from render.yaml.",
     });
   } else if (!lastBackupAt) {
     items.push({
       id: "backups",
       label: "Daily backups",
       status: "amber",
-      detail: "R2 is configured but no backup has run yet.",
+      detail: "Storage is configured but no backup has run yet.",
       howToFix: "Confirm the Render Cron Job (premier-crm-backup-cron) is deployed and has APP_URL + CRON_SECRET set.",
     });
   } else {
@@ -87,9 +87,9 @@ export async function computeReadiness(): Promise<ReadinessItem[]> {
   }
 
   items.push(
-    isR2Configured()
-      ? { id: "r2", label: "File storage (R2)", status: "green", detail: "R2 is configured — uploads, PDFs and backups persist." }
-      : { id: "r2", label: "File storage (R2)", status: "amber", detail: "R2 isn't configured — uploaded files and generated PDFs aren't persisted.", howToFix: "Set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY, R2_BUCKET." }
+    isSupabaseStorageConfigured()
+      ? { id: "storage", label: "File storage (Supabase)", status: "green", detail: "Supabase Storage is configured — uploads, PDFs and backups persist." }
+      : { id: "storage", label: "File storage (Supabase)", status: "amber", detail: "Storage isn't configured — uploaded files and generated PDFs aren't persisted.", howToFix: "Set NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET." }
   );
 
   items.push(

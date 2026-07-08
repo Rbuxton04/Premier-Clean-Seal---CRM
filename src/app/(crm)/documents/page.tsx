@@ -7,7 +7,7 @@ import { listDocuments } from "@/services/media.service";
 import { listCustomers } from "@/services/customer.service";
 import { listJobs } from "@/services/job.service";
 import { allDocumentCategoryLabels } from "@/validators/media";
-import { isR2Configured } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured } from "@/lib/storage/supabase";
 import type { DocumentItem } from "@/services/media.service";
 import { DocumentFilters } from "./document-filters";
 import { DocumentUploadForm } from "./upload-form";
@@ -33,7 +33,7 @@ export default async function DocumentsPage({
   searchParams: { q?: string; category?: string; customerId?: string; jobId?: string };
 }) {
   const { documents, customers, jobs, dbOnline } = await loadDocuments(searchParams.q, searchParams.category, searchParams.customerId, searchParams.jobId);
-  const r2Ready = isR2Configured();
+  const storageReady = isSupabaseStorageConfigured();
 
   return (
     <div className="space-y-4">
@@ -51,7 +51,7 @@ export default async function DocumentsPage({
       {dbOnline && (
         <>
           <DocumentUploadForm
-            r2Ready={r2Ready}
+            storageReady={storageReady}
             customers={customers.map((c) => ({ id: c.id, name: c.name, company: c.company }))}
             jobs={jobs.map((j) => ({ id: j.id, jobNumber: j.jobNumber, customer: j.customer }))}
           />

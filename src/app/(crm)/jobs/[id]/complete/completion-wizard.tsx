@@ -44,10 +44,13 @@ function resizeImageFile(file: File, maxDim = 1600, quality = 0.82): Promise<Blo
   });
 }
 
-/** Uploads a single file/blob directly to R2 via the presign endpoint — same
- * pattern as the public request-quote form. Returns null (never throws) if
- * R2 isn't configured or the upload fails, so callers can skip gracefully. */
-async function uploadToR2(blob: Blob, filename: string, contentType: string): Promise<{ url: string; sizeBytes: number } | null> {
+/** Uploads a single file/blob directly to Supabase Storage via the presign
+ * endpoint — same pattern as the public request-quote form. Returns null
+ * (never throws) if storage isn't configured or the upload fails, so
+ * callers can skip gracefully. The returned `url` is a storage path (the
+ * bucket is private), resolved to a viewable signed URL wherever it's
+ * displayed later — see getFileUrl() in src/lib/storage/supabase.ts. */
+async function uploadToStorage(blob: Blob, filename: string, contentType: string): Promise<{ url: string; sizeBytes: number } | null> {
   try {
     const presignRes = await fetch("/api/uploads/presign", {
       method: "POST",
@@ -58,7 +61,7 @@ async function uploadToR2(blob: Blob, filename: string, contentType: string): Pr
     if (!presign.configured) return null;
 
     await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": contentType }, body: blob });
-    return { url: presign.publicUrl, sizeBytes: blob.size };
+    return { url: presign.path, sizeBytes: blob.size };
   } catch {
     return null;
   }
@@ -161,18 +164,19 @@ export function CompletionWizard({
 
     setUploading(true);
     try {
-      // Photos and the signature upload straight from the browser to R2 —
-      // the server action below only ever sees the resulting URLs.
+      // Photos and the signature upload straight from the browser to
+      // Supabase Storage — the server action below only ever sees the
+      // resulting storage paths.
       const uploadedPhotos = (
         await Promise.all(
           photos.map(async (p, i) => {
-            const uploaded = await uploadToR2(p.blob, `${p.category.toLowerCase()}-${i}-${p.name || "photo.jpg"}`, "image/jpeg");
+            const uploaded = await uploadToStorage(p.blob, `${p.category.toLowerCase()}-${i}-${p.name || "photo.jpg"}`, "image/jpeg");
             return uploaded ? { category: p.category, url: uploaded.url, mimeType: "image/jpeg", sizeBytes: uploaded.sizeBytes } : null;
           })
         )
       ).filter((p): p is NonNullable<typeof p> => p !== null);
 
-      const uploadedSignature = signatureBlob ? await uploadToR2(signatureBlob, "signature.png", "image/png") : null;
+      const uploadedSignature = signatureBlob ? await uploadToStorage(signatureBlob, "signature.png", "image/png") : null;
 
       const input: CompletionInput = {
         materials: materials.map((m) => ({

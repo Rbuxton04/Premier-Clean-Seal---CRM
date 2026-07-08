@@ -1,7 +1,19 @@
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
+import { getFileUrl } from "@/lib/storage/supabase";
 import { enquiryStageLabels, enquiryStages, type EnquiryFieldsInput, type PublicEnquiryInput } from "@/validators/enquiry";
 import type { propertyTypes } from "@/validators/customer";
+
+/** Resolves stored file paths (the bucket is private) to viewable signed URLs, falling back to the raw path if signing fails so an image just breaks rather than the page crashing. */
+async function resolveFileUrls<T extends { url: string; thumbnailUrl: string | null }>(files: T[]): Promise<T[]> {
+  return Promise.all(
+    files.map(async (f) => ({
+      ...f,
+      url: (await getFileUrl(f.url)) ?? f.url,
+      thumbnailUrl: f.thumbnailUrl ? (await getFileUrl(f.thumbnailUrl)) ?? f.thumbnailUrl : null,
+    }))
+  );
+}
 
 // Explicit hand-written return types so included relations survive across
 // the function boundary (see the Prisma typing note in customer.service.ts).
@@ -75,7 +87,8 @@ export async function listEnquiries(): Promise<EnquiryCardItem[]> {
     },
     orderBy: { kanbanOrder: "asc" },
   });
-  return rows as EnquiryCardItem[];
+  const items = rows as EnquiryCardItem[];
+  return Promise.all(items.map(async (item) => ({ ...item, files: await resolveFileUrls(item.files) })));
 }
 
 export async function getEnquiry(id: string): Promise<EnquiryDetail | null> {
@@ -104,7 +117,9 @@ export async function getEnquiry(id: string): Promise<EnquiryDetail | null> {
       customer: { select: { id: true, name: true } },
     },
   });
-  return row as EnquiryDetail | null;
+  if (!row) return null;
+  const detail = row as EnquiryDetail;
+  return { ...detail, files: await resolveFileUrls(detail.files) };
 }
 
 export async function createPublicEnquiry(data: PublicEnquiryInput): Promise<{ id: string }> {

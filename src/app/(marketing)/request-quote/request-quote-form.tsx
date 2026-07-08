@@ -55,7 +55,7 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
 
         await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
         uploaded.push({
-          url: presign.publicUrl,
+          url: presign.path,
           mimeType: file.type,
           sizeBytes: file.size,
           kind: file.type.startsWith("video") ? "VIDEO" : "PHOTO",

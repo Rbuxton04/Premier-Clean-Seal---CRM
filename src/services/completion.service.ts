@@ -1,7 +1,7 @@
 import { db } from "@/lib/db";
 import { ORG_ID, getOrgSettings, applyVat } from "@/lib/settings";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { isR2Configured, uploadBuffer } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured, uploadFile } from "@/lib/storage/supabase";
 import { renderWarrantyPdfBuffer } from "@/lib/pdf/warranty-pdf";
 import { renderInvoicePdfBuffer } from "@/lib/pdf/invoice-pdf";
 import { applicationAreaLabels } from "@/validators/completion";
@@ -125,8 +125,8 @@ export async function finishJob(jobId: string, input: CompletionInput): Promise<
       coverage,
       materials: resolvedMaterials.map((m) => ({ productLabel: m.productText, colour: m.colour, area: applicationAreaLabels[m.applicationArea] })),
     });
-    if (isR2Configured()) {
-      const certificateUrl = await uploadBuffer(`jobs/${job.jobNumber}/warranty-certificate.pdf`, buffer, "application/pdf");
+    if (isSupabaseStorageConfigured()) {
+      const certificateUrl = await uploadFile(`jobs/${job.jobNumber}/warranty-certificate.pdf`, buffer, "application/pdf");
       await db.warranty.update({ where: { id: warranty.id }, data: { certificateUrl } });
     }
   } catch {
@@ -173,8 +173,8 @@ export async function finishJob(jobId: string, input: CompletionInput): Promise<
       vatAmount: vat.vatAmount,
       amount: vat.total,
     });
-    if (isR2Configured()) {
-      const pdfUrl = await uploadBuffer(`invoices/${invoiceNumber}.pdf`, buffer, "application/pdf");
+    if (isSupabaseStorageConfigured()) {
+      const pdfUrl = await uploadFile(`invoices/${invoiceNumber}.pdf`, buffer, "application/pdf");
       await db.invoice.update({ where: { id: invoice.id }, data: { pdfUrl } });
     }
   } catch {

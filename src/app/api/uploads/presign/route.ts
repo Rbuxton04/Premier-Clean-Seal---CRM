@@ -1,21 +1,22 @@
 import { NextResponse } from "next/server";
-import { isR2Configured, presignUpload } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured, presignUpload } from "@/lib/storage/supabase";
 
 // Public (unauthenticated) — used by both the anonymous quote-request form
 // and the (Clerk-protected) job completion wizard, so it must degrade
-// gracefully rather than 401/500 when R2 isn't wired up yet. Once R2_* env
-// vars are set, isR2Configured() flips true and this starts returning real
-// presigned URLs; until then it tells the client "not configured yet" so it
-// falls back to keeping the file selected client-side only.
+// gracefully rather than 401/500 when Supabase Storage isn't wired up yet.
+// Once the SUPABASE_* storage env vars are set, isSupabaseStorageConfigured()
+// flips true and this starts returning real signed upload URLs; until then
+// it tells the client "not configured yet" so it falls back to keeping the
+// file selected client-side only.
 //
 // Since anyone can call this without signing in, `folder` is restricted to
 // an allowlist rather than trusting whatever the client sends — otherwise a
-// caller could mint presigned PUTs into prefixes like "backups/" that were
-// never meant to accept public writes.
+// caller could mint signed upload URLs into prefixes like "backups/" that
+// were never meant to accept public writes.
 const ALLOWED_FOLDERS = new Set(["uploads", "jobs"]);
 
 export async function POST(req: Request) {
-  if (!isR2Configured()) {
+  if (!isSupabaseStorageConfigured()) {
     return NextResponse.json({ configured: false });
   }
 

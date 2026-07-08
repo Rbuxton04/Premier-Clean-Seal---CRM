@@ -1,6 +1,7 @@
 import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
+import { getFileUrl } from "@/lib/storage/supabase";
 import { isResendConfigured, sendPortalLinkEmail as sendPortalLinkEmailViaResend } from "@/lib/email/resend";
 import { getQuote, recordQuoteViewedById, type QuoteDetail } from "@/services/quote.service";
 import { listDocuments, type DocumentItem } from "@/services/media.service";
@@ -61,7 +62,7 @@ async function getSharedPhotoPairs(customerId: string): Promise<PortalPhotoPair[
 
   const byId = new Map(photos.map((p) => [p.id, p]));
   const seen = new Set<string>();
-  const pairs: PortalPhotoPair[] = [];
+  const pending: Array<{ jobId: string; jobNumber: string; completedAt: Date | null; beforePath: string; afterPath: string }> = [];
 
   for (const p of photos) {
     if (seen.has(p.id) || !p.pairedWithId || !p.job) continue;
@@ -72,10 +73,20 @@ async function getSharedPhotoPairs(customerId: string): Promise<PortalPhotoPair[
 
     const before = p.category === "AFTER" ? other : p;
     const after = p.category === "AFTER" ? p : other;
-    pairs.push({ jobId: p.job.id, jobNumber: p.job.jobNumber, completedAt: p.job.actualEnd, beforeUrl: before.url, afterUrl: after.url });
+    pending.push({ jobId: p.job.id, jobNumber: p.job.jobNumber, completedAt: p.job.actualEnd, beforePath: before.url, afterPath: after.url });
   }
 
-  return pairs;
+  // Bucket is private -- resolve each stored path to a signed, viewable URL
+  // (falling back to the raw path, a harmlessly broken image, if signing fails).
+  return Promise.all(
+    pending.map(async (pair) => ({
+      jobId: pair.jobId,
+      jobNumber: pair.jobNumber,
+      completedAt: pair.completedAt,
+      beforeUrl: (await getFileUrl(pair.beforePath)) ?? pair.beforePath,
+      afterUrl: (await getFileUrl(pair.afterPath)) ?? pair.afterPath,
+    }))
+  );
 }
 
 const PORTAL_DOCUMENT_CATEGORIES = new Set(["QUOTE_PDF", "INVOICE_PDF", "CERTIFICATE"]);

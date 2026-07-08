@@ -13,11 +13,11 @@ type CustomerOption = { id: string; name: string; company: string | null };
 type JobOption = { id: string; jobNumber: string; customer: { id: string; name: string } };
 
 export function DocumentUploadForm({
-  r2Ready,
+  storageReady,
   customers,
   jobs,
 }: {
-  r2Ready: boolean;
+  storageReady: boolean;
   customers: CustomerOption[];
   jobs: JobOption[];
 }) {
@@ -40,8 +40,8 @@ export function DocumentUploadForm({
       setMessage({ ok: false, text: "Choose a file to upload." });
       return;
     }
-    if (!r2Ready) {
-      setMessage({ ok: false, text: "Storage isn't connected yet — set the R2_* env vars to enable uploads." });
+    if (!storageReady) {
+      setMessage({ ok: false, text: "Storage isn't connected yet — set the SUPABASE_* storage env vars to enable uploads." });
       return;
     }
 
@@ -54,7 +54,7 @@ export function DocumentUploadForm({
         });
         const presign = await presignRes.json();
         if (!presign.configured) {
-          setMessage({ ok: false, text: "Storage isn't connected yet — set the R2_* env vars to enable uploads." });
+          setMessage({ ok: false, text: "Storage isn't connected yet — set the SUPABASE_* storage env vars to enable uploads." });
           return;
         }
 
@@ -64,7 +64,7 @@ export function DocumentUploadForm({
           customerId: customerId || undefined,
           jobId: jobId || undefined,
           category,
-          url: presign.publicUrl,
+          url: presign.path,
           mimeType: file.type || "application/octet-stream",
           sizeBytes: file.size,
         });
@@ -86,10 +86,10 @@ export function DocumentUploadForm({
   return (
     <div className="space-y-3 rounded-lg border bg-muted/30 p-4">
       <p className="text-sm font-semibold">Upload a document</p>
-      {!r2Ready && (
+      {!storageReady && (
         <p className="text-xs text-muted-foreground">
-          Storage isn&apos;t connected yet, so uploads won&apos;t be saved — set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID,
-          R2_SECRET_ACCESS_KEY, R2_BUCKET to activate this. The form still works so you can see how it&apos;ll look.
+          Storage isn&apos;t connected yet, so uploads won&apos;t be saved — set NEXT_PUBLIC_SUPABASE_URL,
+          SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET to activate this. The form still works so you can see how it&apos;ll look.
         </p>
       )}
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">

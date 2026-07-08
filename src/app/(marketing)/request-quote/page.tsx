@@ -1,12 +1,12 @@
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
-import { isR2Configured } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured } from "@/lib/storage/supabase";
 import { RequestQuoteForm } from "./request-quote-form";
 
 export const metadata = { title: "Request a Quote — Premier Clean & Seal" };
 export const dynamic = "force-dynamic";
 
 export default function RequestQuotePage() {
-  const photosEnabled = isR2Configured();
+  const photosEnabled = isSupabaseStorageConfigured();
 
   return (
     <div className="container max-w-2xl py-10">

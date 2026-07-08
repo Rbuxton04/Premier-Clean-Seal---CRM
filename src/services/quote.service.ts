@@ -3,7 +3,7 @@ import type { QuoteStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ORG_ID, getOrgSettings, applyVat } from "@/lib/settings";
 import { nextDocumentNumber } from "@/lib/numbering";
-import { isR2Configured, uploadBuffer } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured, uploadFile } from "@/lib/storage/supabase";
 import { isResendConfigured, sendQuoteEmail } from "@/lib/email/resend";
 import { renderQuotePdfBuffer, type QuotePdfData } from "@/lib/pdf/quote-pdf";
 import type { QuoteFormInput } from "@/validators/quote";
@@ -220,12 +220,12 @@ export async function sendQuote(id: string): Promise<SendQuoteResult> {
   const refreshed = (await getQuote(id))!;
   const approvalUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/quote/${token}`;
 
-  // PDF persistence to R2 is best-effort — on-demand generation via the
+  // PDF persistence to storage is best-effort — on-demand generation via the
   // download routes works regardless, so a failure here never blocks sending.
-  if (isR2Configured()) {
+  if (isSupabaseStorageConfigured()) {
     try {
       const buffer = await getQuotePdfBuffer(refreshed);
-      const url = await uploadBuffer(`quotes/${refreshed.quoteNumber}.pdf`, buffer, "application/pdf");
+      const url = await uploadFile(`quotes/${refreshed.quoteNumber}.pdf`, buffer, "application/pdf");
       await db.quote.update({ where: { id }, data: { pdfUrl: url } });
     } catch {
       // Seam not implemented yet — ignore, PDF still generates on demand.

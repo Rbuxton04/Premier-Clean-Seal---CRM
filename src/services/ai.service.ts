@@ -1,6 +1,6 @@
 import { db } from "@/lib/db";
 import { getAiProvider, isAiConfigured, currentAiModelName } from "@/lib/ai";
-import { isR2Configured } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured, getFileUrl } from "@/lib/storage/supabase";
 import type { AnalyseInput, AIAnalysisResult, Findings } from "@/lib/ai/provider";
 
 // Explicit hand-written return type — see the Prisma typing note in
@@ -45,10 +45,18 @@ export async function runEnquiryAnalysis(enquiryId: string): Promise<RunAnalysis
     select: { manufacturer: true, name: true, colour: true, attributes: true },
   });
 
-  // Photos only exist as real, fetchable URLs once R2 is wired — until then
+  // Photos are stored as private-bucket paths, only resolvable to a
+  // fetchable URL (signed, time-limited) once storage is wired — until then
   // fall back to a text-only analysis rather than sending broken links.
-  const usableImages = isR2Configured()
-    ? enquiry.files.slice(0, MAX_IMAGES).map((f) => ({ url: f.thumbnailUrl ?? f.url }))
+  const usableImages = isSupabaseStorageConfigured()
+    ? (
+        await Promise.all(
+          enquiry.files.slice(0, MAX_IMAGES).map(async (f) => {
+            const url = await getFileUrl(f.thumbnailUrl ?? f.url);
+            return url ? { url } : null;
+          })
+        )
+      ).filter((img): img is { url: string } => img !== null)
     : [];
 
   const input: AnalyseInput = {

@@ -2,7 +2,7 @@ import { gzipSync } from "zlib";
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
 import { writeAudit } from "@/lib/audit";
-import { isR2Configured, uploadBuffer, listObjectKeys, deleteObject } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured, uploadFile, listObjectKeys, deleteObject } from "@/lib/storage/supabase";
 
 const BACKUP_PREFIX = "backups/";
 const RETENTION = 30; // keep the last 30 daily backups
@@ -62,9 +62,9 @@ export type BackupResult =
   | { ok: false; message: string };
 
 export async function runBackup(): Promise<BackupResult> {
-  if (!isR2Configured()) {
-    console.warn("[backup] R2 is not configured (R2_ACCOUNT_ID/R2_ACCESS_KEY_ID/R2_SECRET_ACCESS_KEY/R2_BUCKET) — skipping backup. Set these before storing real customer data.");
-    return { ok: false, message: "R2 is not configured — no backup was taken." };
+  if (!isSupabaseStorageConfigured()) {
+    console.warn("[backup] Supabase Storage is not configured (NEXT_PUBLIC_SUPABASE_URL/SUPABASE_SERVICE_ROLE_KEY/SUPABASE_STORAGE_BUCKET) — skipping backup. Set these before storing real customer data.");
+    return { ok: false, message: "Storage is not configured — no backup was taken." };
   }
 
   const snapshot = await snapshotAllTables();
@@ -72,7 +72,7 @@ export async function runBackup(): Promise<BackupResult> {
   const gzipped = gzipSync(Buffer.from(json, "utf8"));
 
   const key = `${BACKUP_PREFIX}db-backup-${new Date().toISOString().replace(/[:.]/g, "-")}.json.gz`;
-  await uploadBuffer(key, gzipped, "application/gzip");
+  await uploadFile(key, gzipped, "application/gzip");
 
   let pruned = 0;
   try {

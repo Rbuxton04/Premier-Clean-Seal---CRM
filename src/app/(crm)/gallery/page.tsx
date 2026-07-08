@@ -4,7 +4,7 @@ import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { listAlbums } from "@/services/media.service";
-import { isR2Configured } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured } from "@/lib/storage/supabase";
 import type { AlbumSummary } from "@/services/media.service";
 
 export const dynamic = "force-dynamic";
@@ -19,7 +19,7 @@ async function loadAlbums(customerId?: string, query?: string) {
 
 export default async function GalleryPage({ searchParams }: { searchParams: { q?: string; customerId?: string } }) {
   const { albums, dbOnline } = await loadAlbums(searchParams.customerId, searchParams.q);
-  const r2Ready = isR2Configured();
+  const storageReady = isSupabaseStorageConfigured();
 
   return (
     <div className="space-y-4">
@@ -36,11 +36,11 @@ export default async function GalleryPage({ searchParams }: { searchParams: { q?
 
       {dbOnline && (
         <>
-          {!r2Ready && (
+          {!storageReady && (
             <Badge variant="warning">
-              Cloudflare storage isn&apos;t connected yet — set R2_ACCOUNT_ID, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY,
-              R2_BUCKET so completion photos are saved and appear here. Sample placeholders are shown below in the
-              meantime.
+              Storage isn&apos;t connected yet — set NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY,
+              SUPABASE_STORAGE_BUCKET so completion photos are saved and appear here. Sample placeholders are shown
+              below in the meantime.
             </Badge>
           )}
 

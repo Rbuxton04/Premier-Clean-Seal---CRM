@@ -1,6 +1,13 @@
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
+import { getFileUrl } from "@/lib/storage/supabase";
 import type { UploadDocumentInput } from "@/validators/media";
+
+/** Resolves a stored file path (the bucket is private) to a viewable signed URL, falling back to the raw path if signing fails so an image just breaks rather than the page crashing. */
+async function resolveUrl(path: string | null): Promise<string | null> {
+  if (!path) return null;
+  return (await getFileUrl(path)) ?? path;
+}
 
 // Explicit hand-written return types — see the Prisma typing note in
 // customer.service.ts.
@@ -43,19 +50,22 @@ export async function listAlbums(customerId?: string, query?: string): Promise<A
     orderBy: { createdAt: "desc" },
   });
 
-  return jobs.map((job) => {
-    const after = job.files.find((f) => f.category === "AFTER");
-    const before = job.files.find((f) => f.category === "BEFORE");
-    return {
-      jobId: job.id,
-      jobNumber: job.jobNumber,
-      customer: job.customer,
-      property: job.property,
-      completedAt: job.actualEnd,
-      photoCount: job.files.length,
-      coverUrl: after?.url ?? before?.url ?? job.files[0]?.url ?? null,
-    };
-  });
+  return Promise.all(
+    jobs.map(async (job) => {
+      const after = job.files.find((f) => f.category === "AFTER");
+      const before = job.files.find((f) => f.category === "BEFORE");
+      const coverPath = after?.url ?? before?.url ?? job.files[0]?.url ?? null;
+      return {
+        jobId: job.id,
+        jobNumber: job.jobNumber,
+        customer: job.customer,
+        property: job.property,
+        completedAt: job.actualEnd,
+        photoCount: job.files.length,
+        coverUrl: await resolveUrl(coverPath),
+      };
+    })
+  );
 }
 
 export type AlbumPhoto = {
@@ -93,13 +103,21 @@ export async function getAlbum(jobId: string): Promise<AlbumDetail | null> {
   });
   if (!job) return null;
 
+  const photos = await Promise.all(
+    (job.files as AlbumPhoto[]).map(async (photo) => ({
+      ...photo,
+      url: (await resolveUrl(photo.url)) ?? photo.url,
+      thumbnailUrl: await resolveUrl(photo.thumbnailUrl),
+    }))
+  );
+
   return {
     jobId: job.id,
     jobNumber: job.jobNumber,
     customer: job.customer,
     property: job.property,
     completedAt: job.actualEnd,
-    photos: job.files as AlbumPhoto[],
+    photos,
   };
 }
 
@@ -267,17 +285,19 @@ export async function listDocuments(
       customer: w.job.customer,
       job: { id: w.job.id, jobNumber: w.job.jobNumber },
     })),
-    ...uploads.map((u) => ({
-      id: u.id,
-      category: u.category ?? "OTHER",
-      name: documentNameFromUrl(u.url),
-      url: u.url,
-      mimeType: u.mimeType,
-      sizeBytes: u.sizeBytes,
-      createdAt: u.createdAt,
-      customer: u.customer,
-      job: u.job,
-    })),
+    ...(await Promise.all(
+      uploads.map(async (u) => ({
+        id: u.id,
+        category: u.category ?? "OTHER",
+        name: documentNameFromUrl(u.url),
+        url: (await resolveUrl(u.url)) ?? u.url,
+        mimeType: u.mimeType,
+        sizeBytes: u.sizeBytes,
+        createdAt: u.createdAt,
+        customer: u.customer,
+        job: u.job,
+      }))
+    )),
   ];
 
   let filtered = items;

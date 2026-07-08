@@ -5,7 +5,7 @@ import { getEnquiry, findMatchingCustomers, listAssigneeOptions } from "@/servic
 import { listProductOptions } from "@/services/property.service";
 import { getPendingAnalysisTask } from "@/services/ai.service";
 import { isAiConfigured } from "@/lib/ai";
-import { isR2Configured } from "@/lib/storage/r2";
+import { isSupabaseStorageConfigured } from "@/lib/storage/supabase";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -31,7 +31,7 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
     getPendingAnalysisTask(enquiry.id),
   ]);
   const aiConfigured = isAiConfigured();
-  const photosAvailable = isR2Configured();
+  const photosAvailable = isSupabaseStorageConfigured();
 
   return (
     <div className="space-y-6">
