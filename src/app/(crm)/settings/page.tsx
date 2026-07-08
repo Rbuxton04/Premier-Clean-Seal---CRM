@@ -36,6 +36,10 @@ export default async function SettingsPage() {
               <p className="font-medium">Go-live readiness →</p>
               <p className="text-sm text-muted-foreground">Checklist covering sign-in, backups, and data protection before storing real customer data.</p>
             </a>
+            <a href="/settings/deleted" className="block max-w-2xl rounded-lg border p-4 hover:bg-accent/40 transition-colors">
+              <p className="font-medium">Deleted items →</p>
+              <p className="text-sm text-muted-foreground">Restore a soft-deleted job, quote, or invoice.</p>
+            </a>
           </>
         )}
         <SettingsForm

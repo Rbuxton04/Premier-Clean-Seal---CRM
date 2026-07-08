@@ -94,6 +94,7 @@ export async function listJobs(status?: string, technicianId?: string): Promise<
   const rows = await db.job.findMany({
     where: {
       organisationId: ORG_ID,
+      deletedAt: null,
       ...(status ? { status: status as JobStatus } : {}),
       ...(technicianId ? { technicianId } : {}),
     },
@@ -105,7 +106,7 @@ export async function listJobs(status?: string, technicianId?: string): Promise<
 
 export async function getJob(id: string): Promise<JobDetail | null> {
   const row = await db.job.findFirst({
-    where: { id, organisationId: ORG_ID },
+    where: { id, organisationId: ORG_ID, deletedAt: null },
     include: {
       customer: { select: { id: true, name: true, email: true, phone: true } },
       property: { select: { id: true, addressLine1: true, postcode: true } },
@@ -143,12 +144,12 @@ export async function listCalendarData(
   const [technicians, scheduled, unscheduled] = await Promise.all([
     listTechnicians(),
     db.job.findMany({
-      where: { organisationId: ORG_ID, scheduledStart: { gte: weekStart, lt: weekEnd } },
+      where: { organisationId: ORG_ID, deletedAt: null, scheduledStart: { gte: weekStart, lt: weekEnd } },
       include: jobListInclude,
       orderBy: { scheduledStart: "asc" },
     }),
     db.job.findMany({
-      where: { organisationId: ORG_ID, scheduledStart: null, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+      where: { organisationId: ORG_ID, deletedAt: null, scheduledStart: null, status: { notIn: ["COMPLETED", "CANCELLED"] } },
       include: jobListInclude,
       orderBy: { createdAt: "desc" },
     }),
@@ -251,6 +252,35 @@ export async function scheduleJob(jobId: string, technicianId: string | null, da
       type: "JOB_SCHEDULED",
       title: `Job ${current.jobNumber} scheduled for ${start.toLocaleDateString("en-GB")}${tech ? ` with ${tech.name}` : ""}`,
     },
+  });
+}
+
+/**
+ * Soft-delete: hides the job everywhere (it stops matching every
+ * deletedAt: null query above) without touching its customer, quote, or
+ * invoice — none of which cascade. Callers are responsible for the
+ * admin-only check; this function trusts its caller.
+ */
+export async function softDeleteJob(id: string, userId: string | null): Promise<void> {
+  const job = await db.job.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedById: userId },
+  });
+  const actor = userId ? await db.user.findUnique({ where: { id: userId }, select: { name: true } }) : null;
+  await db.timelineEvent.create({
+    data: {
+      customerId: job.customerId,
+      jobId: job.id,
+      type: "JOB_DELETED",
+      title: `Job ${job.jobNumber} deleted${actor ? ` by ${actor.name}` : ""}`,
+    },
+  });
+}
+
+export async function restoreJob(id: string): Promise<void> {
+  const job = await db.job.update({ where: { id }, data: { deletedAt: null, deletedById: null } });
+  await db.timelineEvent.create({
+    data: { customerId: job.customerId, jobId: job.id, type: "JOB_RESTORED", title: `Job ${job.jobNumber} restored` },
   });
 }
 

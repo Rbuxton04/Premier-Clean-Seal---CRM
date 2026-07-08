@@ -73,7 +73,7 @@ const detailInclude = {
 
 export async function listQuotes(status?: string): Promise<QuoteListItem[]> {
   const rows = await db.quote.findMany({
-    where: { organisationId: ORG_ID, ...(status ? { status: status as QuoteStatus } : {}) },
+    where: { organisationId: ORG_ID, deletedAt: null, ...(status ? { status: status as QuoteStatus } : {}) },
     include: { customer: { select: { id: true, name: true, company: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -81,12 +81,12 @@ export async function listQuotes(status?: string): Promise<QuoteListItem[]> {
 }
 
 export async function getQuote(id: string): Promise<QuoteDetail | null> {
-  const row = await db.quote.findFirst({ where: { id, organisationId: ORG_ID }, include: detailInclude });
+  const row = await db.quote.findFirst({ where: { id, organisationId: ORG_ID, deletedAt: null }, include: detailInclude });
   return row as QuoteDetail | null;
 }
 
 export async function getQuoteByToken(token: string): Promise<QuoteDetail | null> {
-  const row = await db.quote.findFirst({ where: { approvalToken: token }, include: detailInclude });
+  const row = await db.quote.findFirst({ where: { approvalToken: token, deletedAt: null }, include: detailInclude });
   return row as QuoteDetail | null;
 }
 
@@ -263,7 +263,10 @@ export async function sendQuote(id: string): Promise<SendQuoteResult> {
 }
 
 export async function recordQuoteViewed(token: string): Promise<void> {
-  const quote = await db.quote.findFirst({ where: { approvalToken: token }, select: { id: true, status: true, customerId: true, quoteNumber: true } });
+  const quote = await db.quote.findFirst({
+    where: { approvalToken: token, deletedAt: null },
+    select: { id: true, status: true, customerId: true, quoteNumber: true },
+  });
   if (!quote || quote.status !== "SENT") return;
 
   await db.quote.update({ where: { id: quote.id }, data: { status: "VIEWED" } });
@@ -276,8 +279,8 @@ export async function recordQuoteViewed(token: string): Promise<void> {
  * portal, which authorises by (quoteId, customerId) rather than the quote's
  * own separate approval token. Safe to call repeatedly (no-ops once viewed). */
 export async function recordQuoteViewedById(quoteId: string): Promise<void> {
-  const quote = await db.quote.findUnique({ where: { id: quoteId }, select: { id: true, status: true, customerId: true, quoteNumber: true } });
-  if (!quote || quote.status !== "SENT") return;
+  const quote = await db.quote.findUnique({ where: { id: quoteId }, select: { id: true, status: true, customerId: true, quoteNumber: true, deletedAt: true } });
+  if (!quote || quote.deletedAt || quote.status !== "SENT") return;
 
   await db.quote.update({ where: { id: quote.id }, data: { status: "VIEWED" } });
   await db.timelineEvent.create({
@@ -288,7 +291,7 @@ export async function recordQuoteViewedById(quoteId: string): Promise<void> {
 export type ApprovalResult = { ok: true } | { ok: false; message: string };
 
 export async function approveQuote(token: string, name: string, ip: string | null): Promise<ApprovalResult> {
-  const quote = await db.quote.findFirst({ where: { approvalToken: token } });
+  const quote = await db.quote.findFirst({ where: { approvalToken: token, deletedAt: null } });
   if (!quote) return { ok: false, message: "Quote not found." };
   if (displayStatus(quote) === "EXPIRED") return { ok: false, message: "This quote has expired." };
   if (quote.status === "APPROVED" || quote.status === "REJECTED") return { ok: false, message: "This quote has already been actioned." };
@@ -304,7 +307,7 @@ export async function approveQuote(token: string, name: string, ip: string | nul
 }
 
 export async function rejectQuote(token: string, reason: string | undefined): Promise<ApprovalResult> {
-  const quote = await db.quote.findFirst({ where: { approvalToken: token } });
+  const quote = await db.quote.findFirst({ where: { approvalToken: token, deletedAt: null } });
   if (!quote) return { ok: false, message: "Quote not found." };
   if (quote.status === "APPROVED" || quote.status === "REJECTED") return { ok: false, message: "This quote has already been actioned." };
 
@@ -326,7 +329,7 @@ export async function rejectQuote(token: string, reason: string | undefined): Pr
  * Never trust a customerId the caller didn't derive from a resolved token.
  */
 export async function approveQuoteForCustomer(quoteId: string, customerId: string, name: string, ip: string | null): Promise<ApprovalResult> {
-  const quote = await db.quote.findFirst({ where: { id: quoteId, customerId } });
+  const quote = await db.quote.findFirst({ where: { id: quoteId, customerId, deletedAt: null } });
   if (!quote) return { ok: false, message: "Quote not found." };
   if (displayStatus(quote) === "EXPIRED") return { ok: false, message: "This quote has expired." };
   if (quote.status === "APPROVED" || quote.status === "REJECTED") return { ok: false, message: "This quote has already been actioned." };
@@ -342,7 +345,7 @@ export async function approveQuoteForCustomer(quoteId: string, customerId: strin
 }
 
 export async function rejectQuoteForCustomer(quoteId: string, customerId: string, reason: string | undefined): Promise<ApprovalResult> {
-  const quote = await db.quote.findFirst({ where: { id: quoteId, customerId } });
+  const quote = await db.quote.findFirst({ where: { id: quoteId, customerId, deletedAt: null } });
   if (!quote) return { ok: false, message: "Quote not found." };
   if (quote.status === "APPROVED" || quote.status === "REJECTED") return { ok: false, message: "This quote has already been actioned." };
 
@@ -355,6 +358,34 @@ export async function rejectQuoteForCustomer(quoteId: string, customerId: string
     },
   });
   return { ok: true };
+}
+
+/**
+ * Soft-delete: hides the quote everywhere (it stops matching every
+ * deletedAt: null query above) without touching its customer or any job
+ * already converted from it — neither cascades. Callers are responsible
+ * for the admin-only check; this function trusts its caller.
+ */
+export async function softDeleteQuote(id: string, userId: string | null): Promise<void> {
+  const quote = await db.quote.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedById: userId },
+  });
+  const actor = userId ? await db.user.findUnique({ where: { id: userId }, select: { name: true } }) : null;
+  await db.timelineEvent.create({
+    data: {
+      customerId: quote.customerId,
+      type: "QUOTE_DELETED",
+      title: `Quote ${quote.quoteNumber} deleted${actor ? ` by ${actor.name}` : ""}`,
+    },
+  });
+}
+
+export async function restoreQuote(id: string): Promise<void> {
+  const quote = await db.quote.update({ where: { id }, data: { deletedAt: null, deletedById: null } });
+  await db.timelineEvent.create({
+    data: { customerId: quote.customerId, type: "QUOTE_RESTORED", title: `Quote ${quote.quoteNumber} restored` },
+  });
 }
 
 export type QuoteDraft = {

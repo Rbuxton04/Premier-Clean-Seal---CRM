@@ -23,6 +23,7 @@ export async function listAlbums(customerId?: string, query?: string): Promise<A
   const jobs = await db.job.findMany({
     where: {
       organisationId: ORG_ID,
+      deletedAt: null,
       files: { some: { kind: { in: ["PHOTO", "VIDEO"] } } },
       ...(customerId ? { customerId } : {}),
       ...(query
@@ -79,7 +80,7 @@ export type AlbumDetail = {
 
 export async function getAlbum(jobId: string): Promise<AlbumDetail | null> {
   const job = await db.job.findFirst({
-    where: { id: jobId, organisationId: ORG_ID },
+    where: { id: jobId, organisationId: ORG_ID, deletedAt: null },
     include: {
       customer: { select: { id: true, name: true } },
       property: { select: { id: true, addressLine1: true, postcode: true } },
@@ -167,6 +168,7 @@ export async function listDocuments(
     db.quote.findMany({
       where: {
         organisationId: ORG_ID,
+        deletedAt: null,
         ...(customerId ? { customerId } : {}),
         ...(jobId ? { job: { id: jobId } } : {}),
       },
@@ -182,6 +184,7 @@ export async function listDocuments(
     db.invoice.findMany({
       where: {
         customer: { organisationId: ORG_ID },
+        deletedAt: null,
         ...(customerId ? { customerId } : {}),
         ...(jobId ? { jobId } : {}),
       },
@@ -196,7 +199,7 @@ export async function listDocuments(
     }),
     db.warranty.findMany({
       where: {
-        job: { organisationId: ORG_ID, ...(customerId ? { customerId } : {}) },
+        job: { organisationId: ORG_ID, deletedAt: null, ...(customerId ? { customerId } : {}) },
         ...(jobId ? { jobId } : {}),
       },
       select: {

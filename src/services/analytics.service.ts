@@ -52,11 +52,11 @@ export async function revenueByMonth(months = 12): Promise<MonthlyRevenue[]> {
 
   const [invoices, jobsWithoutInvoice] = await Promise.all([
     db.invoice.findMany({
-      where: { paidAt: { gte: start }, customer: { organisationId: ORG_ID } },
+      where: { paidAt: { gte: start }, customer: { organisationId: ORG_ID }, deletedAt: null },
       select: { paidAt: true, amount: true },
     }),
     db.job.findMany({
-      where: { organisationId: ORG_ID, status: "COMPLETED", actualEnd: { gte: start }, invoice: null },
+      where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED", actualEnd: { gte: start }, invoice: null },
       select: { actualEnd: true, price: true },
     }),
   ]);
@@ -87,7 +87,7 @@ export async function jobsByMonth(months = 12): Promise<MonthlyJobs[]> {
   const monthKeys = monthKeysFrom(start, months);
 
   const jobs = await db.job.findMany({
-    where: { organisationId: ORG_ID, createdAt: { gte: start } },
+    where: { organisationId: ORG_ID, deletedAt: null, createdAt: { gte: start } },
     select: { createdAt: true },
   });
 
@@ -189,7 +189,7 @@ export type ServiceProfitability = {
 
 export async function mostProfitableServices(): Promise<ServiceProfitability[]> {
   const jobs = await db.job.findMany({
-    where: { organisationId: ORG_ID, status: "COMPLETED" },
+    where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" },
     select: { price: true, materials: { take: 1, select: { applicationArea: true, cost: true } } },
   });
 
@@ -238,7 +238,7 @@ export async function repeatRevenueByMonth(months = 12): Promise<MonthlyRepeatRe
   const monthKeys = monthKeysFrom(start, months);
 
   const allCompleted = await db.job.findMany({
-    where: { organisationId: ORG_ID, status: "COMPLETED" },
+    where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" },
     select: { customerId: true, price: true, actualEnd: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
@@ -265,7 +265,7 @@ export async function repeatRevenueByMonth(months = 12): Promise<MonthlyRepeatRe
 }
 
 export async function repeatCustomerPct(): Promise<number> {
-  const jobs = await db.job.findMany({ where: { organisationId: ORG_ID, status: "COMPLETED" }, select: { customerId: true } });
+  const jobs = await db.job.findMany({ where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" }, select: { customerId: true } });
   const counts = new Map<string, number>();
   for (const j of jobs) counts.set(j.customerId, (counts.get(j.customerId) ?? 0) + 1);
 
@@ -279,7 +279,7 @@ export async function repeatCustomerPct(): Promise<number> {
 // ---------------------------------------------------------------------------
 
 export async function avgJobValue(): Promise<number> {
-  const result = await db.job.aggregate({ where: { organisationId: ORG_ID, status: "COMPLETED" }, _avg: { price: true } });
+  const result = await db.job.aggregate({ where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" }, _avg: { price: true } });
   return Number(result._avg.price ?? 0);
 }
 
@@ -287,7 +287,7 @@ export type TechnicianPerformance = { technicianId: string; name: string; jobsCo
 
 export async function technicianPerformance(): Promise<TechnicianPerformance[]> {
   const jobs = await db.job.findMany({
-    where: { organisationId: ORG_ID, status: "COMPLETED", technicianId: { not: null } },
+    where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED", technicianId: { not: null } },
     select: { technicianId: true, technician: { select: { name: true } }, satisfactionRating: true },
   });
 

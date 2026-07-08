@@ -24,7 +24,7 @@ const WET_AREAS = ["BATHROOM", "ENSUITE", "KITCHEN"];
 export async function computeJobHealthScores(): Promise<void> {
   const org = await getOrgSettings();
   const jobs = await db.job.findMany({
-    where: { organisationId: ORG_ID, status: "COMPLETED", actualEnd: { not: null } },
+    where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED", actualEnd: { not: null } },
     select: {
       id: true,
       actualEnd: true,
@@ -98,9 +98,9 @@ type WeeklyDigest = {
 async function buildWeeklyDigest(periodStart: Date, periodEnd: Date): Promise<WeeklyDigest> {
   const [weekRevenue, revenueMonths, jobsCompletedThisWeek, colours, products, services, avgValue, repeatPct, techPerf, quickStats, conversion] =
     await Promise.all([
-      db.invoice.aggregate({ _sum: { amount: true }, where: { paidAt: { gte: periodStart }, customer: { organisationId: ORG_ID } } }),
+      db.invoice.aggregate({ _sum: { amount: true }, where: { paidAt: { gte: periodStart }, customer: { organisationId: ORG_ID }, deletedAt: null } }),
       revenueByMonth(1),
-      db.job.count({ where: { organisationId: ORG_ID, status: "COMPLETED", actualEnd: { gte: periodStart } } }),
+      db.job.count({ where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED", actualEnd: { gte: periodStart } } }),
       topColours(5),
       topProducts(5),
       mostProfitableServices(),

@@ -54,7 +54,7 @@ export type JobSearchResult = {
 };
 
 async function searchJobs(filters: SearchFilters, sort: "newest" | "oldest" | undefined, limit: number): Promise<JobSearchResult[]> {
-  const where: Prisma.JobWhereInput = { organisationId: ORG_ID };
+  const where: Prisma.JobWhereInput = { organisationId: ORG_ID, deletedAt: null };
 
   const status = normalizeEnum(filters.status, jobStatuses);
   if (status) where.status = status as JobStatus;

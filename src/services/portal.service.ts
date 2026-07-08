@@ -92,7 +92,7 @@ export async function getPortalHome(customerId: string): Promise<PortalHome> {
   const [customer, awaitingIds, allDocuments, photoPairs, properties] = await Promise.all([
     db.customer.findUniqueOrThrow({ where: { id: customerId }, select: { id: true, name: true, email: true, phone: true } }),
     db.quote.findMany({
-      where: { organisationId: ORG_ID, customerId, status: { in: ["SENT", "VIEWED"] } },
+      where: { organisationId: ORG_ID, customerId, deletedAt: null, status: { in: ["SENT", "VIEWED"] } },
       select: { id: true },
       orderBy: { createdAt: "desc" },
     }),

@@ -333,6 +333,9 @@ model Quote {
   job            Job?
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
+  // Soft delete — mirrors Customer.deletedAt / Job.deletedAt.
+  deletedAt      DateTime?
+  deletedById    String?
 }
 
 model QuoteLineItem {
@@ -390,6 +393,11 @@ model Job {
   // for jobs where rain doesn't matter. Nullable/defaults unset rather than
   // false so existing jobs aren't implicitly asserted as indoor.
   isExternal     Boolean?
+  // Soft delete — mirrors Customer.deletedAt. deletedById is a plain scalar
+  // (no relation), same convention as CommunicationLog.userId, to avoid
+  // needing a named back-relation array on User.
+  deletedAt      DateTime?
+  deletedById    String?
   actualStart    DateTime?
   actualEnd      DateTime?
 
@@ -572,6 +580,12 @@ model Invoice {
   paidAt         DateTime?
   pdfUrl         String?
   createdAt      DateTime      @default(now())
+  // Soft delete ("void") — mirrors Customer.deletedAt / Job.deletedAt.
+  // Invoices are financial records that must generally be retained (UK:
+  // ~6 years), so this hides rather than erases — see the invoice void
+  // action in invoice.service.ts.
+  deletedAt      DateTime?
+  deletedById    String?
 }
 
 // ---------------------------------------------------------------------------

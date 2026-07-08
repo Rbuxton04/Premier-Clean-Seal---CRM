@@ -8,6 +8,8 @@ import * as JobService from "@/services/job.service";
 import type { SendQuoteResult } from "@/services/quote.service";
 import type { ConvertToJobResult } from "@/services/job.service";
 import { writeAudit, actorContext } from "@/lib/audit";
+import { requireAdmin, ForbiddenError } from "@/lib/permissions";
+import type { RecordActionResult } from "@/components/record-action-button";
 
 export type QuoteFormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -75,4 +77,27 @@ export async function convertToJobAction(quoteId: string): Promise<ConvertToJobR
   revalidatePath(`/quotes/${quoteId}`);
   revalidatePath("/jobs");
   return result;
+}
+
+/**
+ * Soft-delete is Admin-only, enforced here server-side regardless of
+ * whether the Delete button was even visible to the caller — the client
+ * confirmation dialog is a UX nicety, never the security boundary.
+ */
+export async function deleteQuoteAction(id: string): Promise<RecordActionResult> {
+  try {
+    const actor = await requireAdmin();
+    const quote = await QuoteService.getQuote(id);
+    if (!quote) return { ok: false, message: "Quote not found." };
+
+    await QuoteService.softDeleteQuote(id, actor.id);
+    const { userId, ip } = await actorContext();
+    await writeAudit({ userId, action: "DELETE", resource: "quote", resourceId: id, before: { quoteNumber: quote.quoteNumber }, ip });
+    revalidatePath("/quotes");
+    revalidatePath("/settings/deleted");
+    return { ok: true, message: "Deleted" };
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, message: err.message };
+    throw err;
+  }
 }

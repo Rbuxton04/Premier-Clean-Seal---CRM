@@ -10,6 +10,7 @@ import { getJob, listTechnicians } from "@/services/job.service";
 import { jobStatusLabels, jobStatusBadgeVariant, paymentStatusLabels } from "@/validators/job";
 import { applicationAreaLabels } from "@/validators/completion";
 import { JobFieldsForm } from "./job-fields-form";
+import { DeleteJobButton } from "../delete-job-button";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinancials } from "@/lib/permissions";
 
@@ -30,11 +31,14 @@ export default async function JobDetailPage({ params }: { params: { id: string }
         <Link href="/jobs" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to jobs
         </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{job.jobNumber}</h1>
-          <Badge variant={jobStatusBadgeVariant[job.status as keyof typeof jobStatusBadgeVariant] ?? "outline"}>
-            {jobStatusLabels[job.status as keyof typeof jobStatusLabels] ?? job.status}
-          </Badge>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-display text-2xl font-semibold tracking-tight">{job.jobNumber}</h1>
+            <Badge variant={jobStatusBadgeVariant[job.status as keyof typeof jobStatusBadgeVariant] ?? "outline"}>
+              {jobStatusLabels[job.status as keyof typeof jobStatusLabels] ?? job.status}
+            </Badge>
+          </div>
+          {user?.role === "ADMIN" && <DeleteJobButton jobId={job.id} jobNumber={job.jobNumber} redirectTo="/jobs" />}
         </div>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
       </div>

@@ -12,12 +12,15 @@ import { quoteStatusLabels, quoteStatusBadgeVariant } from "@/validators/quote";
 import { QuoteBuilder } from "../quote-builder";
 import { QuotePreview } from "../quote-preview";
 import { QuoteActions } from "./quote-actions";
+import { DeleteQuoteButton } from "../delete-quote-button";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
 export default async function QuoteDetailPage({ params }: { params: { id: string } }) {
   const quote = await getQuote(params.id);
   if (!quote) notFound();
+  const user = await getCurrentUser();
 
   const ds = displayStatus(quote);
   const pdfHref = `/api/quotes/${quote.id}/pdf`;
@@ -28,11 +31,14 @@ export default async function QuoteDetailPage({ params }: { params: { id: string
         <Link href="/quotes" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to quotes
         </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{quote.quoteNumber}</h1>
-          <Badge variant={quoteStatusBadgeVariant[ds as keyof typeof quoteStatusBadgeVariant] ?? "outline"}>
-            {quoteStatusLabels[ds as keyof typeof quoteStatusLabels] ?? ds}
-          </Badge>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-display text-2xl font-semibold tracking-tight">{quote.quoteNumber}</h1>
+            <Badge variant={quoteStatusBadgeVariant[ds as keyof typeof quoteStatusBadgeVariant] ?? "outline"}>
+              {quoteStatusLabels[ds as keyof typeof quoteStatusLabels] ?? ds}
+            </Badge>
+          </div>
+          {user?.role === "ADMIN" && <DeleteQuoteButton quoteId={quote.id} quoteNumber={quote.quoteNumber} redirectTo="/quotes" />}
         </div>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
         {quote.status === "APPROVED" && quote.approvedName && (

@@ -4,9 +4,10 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { jobFormSchema, jobUpdateSchema } from "@/validators/job";
 import * as JobService from "@/services/job.service";
-import { canViewFinancials } from "@/lib/permissions";
+import { canViewFinancials, requireAdmin, ForbiddenError } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/auth";
 import { writeAudit, actorContext } from "@/lib/audit";
+import type { RecordActionResult } from "@/components/record-action-button";
 
 export type JobFormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -76,4 +77,29 @@ export async function scheduleJobAction(jobId: string, technicianId: string | nu
   await JobService.scheduleJob(jobId, technicianId, dateISO);
   revalidatePath("/calendar");
   revalidatePath("/jobs");
+}
+
+/**
+ * Soft-delete is Admin-only, enforced here server-side regardless of
+ * whether the Delete button was even visible to the caller — the client
+ * confirmation dialog is a UX nicety, never the security boundary.
+ */
+export async function deleteJobAction(id: string): Promise<RecordActionResult> {
+  try {
+    const actor = await requireAdmin();
+    const job = await JobService.getJob(id);
+    if (!job) return { ok: false, message: "Job not found." };
+
+    await JobService.softDeleteJob(id, actor.id);
+    const { userId, ip } = await actorContext();
+    await writeAudit({ userId, action: "DELETE", resource: "job", resourceId: id, before: { jobNumber: job.jobNumber }, ip });
+    revalidatePath("/jobs");
+    revalidatePath("/calendar");
+    revalidatePath("/map");
+    revalidatePath("/settings/deleted");
+    return { ok: true, message: "Deleted" };
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, message: err.message };
+    throw err;
+  }
 }

@@ -35,6 +35,7 @@ export async function listJobsForMap(dateISO: string, technicianId?: string): Pr
   const rows = await db.job.findMany({
     where: {
       organisationId: ORG_ID,
+      deletedAt: null,
       status: { not: "CANCELLED" },
       scheduledStart: { gte: start, lt: end },
       ...(technicianId ? { technicianId } : {}),

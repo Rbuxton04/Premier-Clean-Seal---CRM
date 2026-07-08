@@ -237,7 +237,7 @@ export async function getMarketingStats(): Promise<MarketingStats> {
   // Repeat business: customers with more than one completed job, and the
   // revenue from every job after their first with us.
   const completedJobs = await db.job.findMany({
-    where: { organisationId: ORG_ID, status: "COMPLETED" },
+    where: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" },
     select: { customerId: true, price: true, createdAt: true },
     orderBy: { createdAt: "asc" },
   });
@@ -363,6 +363,7 @@ export async function runDueReminders(): Promise<RunRemindersResult> {
         where: {
           propertyId: reminder.job.propertyId,
           id: { not: reminder.jobId },
+          deletedAt: null,
           OR: [{ actualEnd: { gt: anchor } }, { scheduledStart: { gt: anchor } }, { createdAt: { gt: anchor } }],
         },
         select: { id: true },

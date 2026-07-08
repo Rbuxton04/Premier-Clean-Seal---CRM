@@ -46,7 +46,7 @@ const listInclude = {
 
 export async function listInvoices(): Promise<InvoiceListItem[]> {
   const rows = await db.invoice.findMany({
-    where: { customer: { organisationId: ORG_ID } },
+    where: { customer: { organisationId: ORG_ID }, deletedAt: null },
     include: listInclude,
     orderBy: { createdAt: "desc" },
   });
@@ -55,7 +55,7 @@ export async function listInvoices(): Promise<InvoiceListItem[]> {
 
 export async function getInvoice(id: string): Promise<InvoiceDetail | null> {
   const row = await db.invoice.findFirst({
-    where: { id, customer: { organisationId: ORG_ID } },
+    where: { id, customer: { organisationId: ORG_ID }, deletedAt: null },
     include: {
       customer: { select: { id: true, name: true, company: true } },
       job: {
@@ -74,7 +74,7 @@ export async function getInvoice(id: string): Promise<InvoiceDetail | null> {
 
 export async function getInvoiceByJobId(jobId: string): Promise<InvoiceDetail | null> {
   const row = await db.invoice.findFirst({
-    where: { jobId },
+    where: { jobId, deletedAt: null },
     include: {
       customer: { select: { id: true, name: true, company: true } },
       job: {
@@ -89,6 +89,37 @@ export async function getInvoiceByJobId(jobId: string): Promise<InvoiceDetail | 
     },
   });
   return row as InvoiceDetail | null;
+}
+
+/**
+ * Soft-delete ("void"): hides the invoice everywhere (it stops matching
+ * every deletedAt: null query above) without touching its customer or job
+ * — neither cascades, and the invoice number is never reused. Invoices are
+ * financial records generally required to be retained (UK: ~6 years), so
+ * this only ever hides, never erases — see the schema comment on
+ * Invoice.deletedAt. Callers are responsible for the admin-only check;
+ * this function trusts its caller.
+ */
+export async function softDeleteInvoice(id: string, userId: string | null): Promise<void> {
+  const invoice = await db.invoice.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedById: userId },
+  });
+  const actor = userId ? await db.user.findUnique({ where: { id: userId }, select: { name: true } }) : null;
+  await db.timelineEvent.create({
+    data: {
+      customerId: invoice.customerId,
+      type: "INVOICE_DELETED",
+      title: `Invoice ${invoice.invoiceNumber} voided${actor ? ` by ${actor.name}` : ""}`,
+    },
+  });
+}
+
+export async function restoreInvoice(id: string): Promise<void> {
+  const invoice = await db.invoice.update({ where: { id }, data: { deletedAt: null, deletedById: null } });
+  await db.timelineEvent.create({
+    data: { customerId: invoice.customerId, type: "INVOICE_RESTORED", title: `Invoice ${invoice.invoiceNumber} restored` },
+  });
 }
 
 export async function getInvoicePdfBuffer(invoice: InvoiceDetail): Promise<Buffer> {

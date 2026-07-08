@@ -9,6 +9,7 @@ import { listJobs, listTechnicians } from "@/services/job.service";
 import { jobStatuses, jobStatusLabels, jobStatusBadgeVariant, paymentStatusLabels } from "@/validators/job";
 import type { JobListItem } from "@/services/job.service";
 import { JobFilters } from "./job-filters";
+import { DeleteJobButton } from "./delete-job-button";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinancials } from "@/lib/permissions";
 
@@ -30,6 +31,7 @@ export default async function JobsPage({ searchParams }: { searchParams: { statu
   // ignored for them rather than trusted from the client.
   const technicianId = user?.role === "TECHNICIAN" ? user.id : searchParams.technicianId;
   const showFinancials = canViewFinancials(user?.role ?? "READONLY");
+  const isAdmin = user?.role === "ADMIN";
   const { jobs, technicians, dbOnline } = await loadJobs(status, technicianId);
 
   return (
@@ -82,6 +84,7 @@ export default async function JobsPage({ searchParams }: { searchParams: { statu
                   <TableHead>Scheduled</TableHead>
                   {showFinancials && <TableHead className="text-right">Price</TableHead>}
                   {showFinancials && <TableHead>Payment</TableHead>}
+                  {isAdmin && <TableHead />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -101,6 +104,11 @@ export default async function JobsPage({ searchParams }: { searchParams: { statu
                     <TableCell>{j.scheduledStart ? new Date(j.scheduledStart).toLocaleDateString("en-GB") : "—"}</TableCell>
                     {showFinancials && <TableCell className="text-right">{formatGBP(Number(j.price))}</TableCell>}
                     {showFinancials && <TableCell>{paymentStatusLabels[j.paymentStatus as keyof typeof paymentStatusLabels] ?? j.paymentStatus}</TableCell>}
+                    {isAdmin && (
+                      <TableCell>
+                        <DeleteJobButton jobId={j.id} jobNumber={j.jobNumber} />
+                      </TableCell>
+                    )}
                   </TableRow>
                 ))}
               </TableBody>

@@ -7,6 +7,8 @@ import { formatGBP } from "@/lib/utils";
 import { listQuotes, displayStatus } from "@/services/quote.service";
 import { quoteStatuses, quoteStatusLabels, quoteStatusBadgeVariant } from "@/validators/quote";
 import type { QuoteListItem } from "@/services/quote.service";
+import { DeleteQuoteButton } from "./delete-quote-button";
+import { getCurrentUser } from "@/lib/auth";
 
 export const dynamic = "force-dynamic";
 
@@ -20,6 +22,8 @@ async function loadQuotes(status?: string): Promise<{ quotes: QuoteListItem[]; d
 
 export default async function QuotesPage({ searchParams }: { searchParams: { status?: string } }) {
   const status = searchParams.status;
+  const user = await getCurrentUser();
+  const isAdmin = user?.role === "ADMIN";
   const { quotes, dbOnline } = await loadQuotes(status);
 
   return (
@@ -69,6 +73,7 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
                   <TableHead className="text-right">Total</TableHead>
                   <TableHead>Created</TableHead>
                   <TableHead>Valid until</TableHead>
+                  {isAdmin && <TableHead />}
                 </TableRow>
               </TableHeader>
               <TableBody>
@@ -93,6 +98,11 @@ export default async function QuotesPage({ searchParams }: { searchParams: { sta
                       <TableCell className="text-right">{formatGBP(Number(q.total))}</TableCell>
                       <TableCell>{new Date(q.createdAt).toLocaleDateString("en-GB")}</TableCell>
                       <TableCell>{q.expiresAt ? new Date(q.expiresAt).toLocaleDateString("en-GB") : "—"}</TableCell>
+                      {isAdmin && (
+                        <TableCell>
+                          <DeleteQuoteButton quoteId={q.id} quoteNumber={q.quoteNumber} />
+                        </TableCell>
+                      )}
                     </TableRow>
                   );
                 })}

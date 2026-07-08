@@ -10,6 +10,7 @@ import { paymentStatusLabels } from "@/validators/job";
 import type { InvoiceListItem } from "@/services/invoice.service";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinancials } from "@/lib/permissions";
+import { DeleteInvoiceButton } from "./delete-invoice-button";
 
 export const dynamic = "force-dynamic";
 
@@ -34,6 +35,7 @@ export default async function InvoicesPage() {
       </div>
     );
   }
+  const isAdmin = user?.role === "ADMIN";
   const { invoices, dbOnline } = await loadInvoices();
 
   return (
@@ -81,11 +83,14 @@ export default async function InvoicesPage() {
                     <Badge variant="outline">{paymentStatusLabels[inv.status as keyof typeof paymentStatusLabels] ?? inv.status}</Badge>
                   </TableCell>
                   <TableCell>
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={`/api/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer">
-                        <FileDown className="h-3.5 w-3.5" /> PDF
-                      </a>
-                    </Button>
+                    <div className="flex flex-wrap gap-2">
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={`/api/invoices/${inv.id}/pdf`} target="_blank" rel="noreferrer">
+                          <FileDown className="h-3.5 w-3.5" /> PDF
+                        </a>
+                      </Button>
+                      {isAdmin && <DeleteInvoiceButton invoiceId={inv.id} invoiceNumber={inv.invoiceNumber} />}
+                    </div>
                   </TableCell>
                 </TableRow>
               ))}
