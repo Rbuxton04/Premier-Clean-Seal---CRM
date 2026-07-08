@@ -109,13 +109,37 @@ export function MapView({
   // dependency on geolocation in any form — the map must render regardless
   // of whether the browser later grants, denies, or blocks (by permissions
   // policy) a location request made elsewhere (see PlanDayPanel).
+  //
+  // Mapbox GL never auto-resizes its canvas when its container's size
+  // changes — it only measures once, at construction, and again whenever
+  // map.resize() is explicitly called. Confirmed directly: shrinking the
+  // container (devtools panel opening) left the map blank, and it only
+  // recovered once something called resize(). Every guard below exists to
+  // make sure resize() gets called whenever the container could plausibly
+  // have a stale size: right after load, on every ResizeObserver tick, on
+  // window resize/orientationchange, and once more a frame after mount.
   useEffect(() => {
     if (!mapboxPublicToken || !mapContainerRef.current || mapRef.current) return;
     let cancelled = false;
     let resizeObserver: ResizeObserver | null = null;
+
+    function handleWindowResize(): void {
+      mapRef.current?.resize();
+    }
+
     (async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
       if (cancelled || !mapContainerRef.current) return;
+
+      // Avoid constructing the map into a 0x0 element — e.g. a panel/tab
+      // that mounts before layout has given it a size. One rAF is enough
+      // for a same-tick layout to settle; the ResizeObserver below still
+      // catches anything that changes size after this point regardless.
+      if (mapContainerRef.current.clientWidth === 0 || mapContainerRef.current.clientHeight === 0) {
+        await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+        if (cancelled || !mapContainerRef.current) return;
+      }
+
       mapboxgl.accessToken = mapboxPublicToken;
       const map = new mapboxgl.Map({
         container: mapContainerRef.current,
@@ -125,13 +149,6 @@ export function MapView({
       });
       map.addControl(new mapboxgl.NavigationControl(), "top-right");
       map.on("load", () => {
-        // The flex/lg: layout around the container can still be settling
-        // (or a mobile browser's address bar can still be resizing the
-        // viewport) when Mapbox first measures its canvas, which is the
-        // classic cause of a map that "loaded" but renders blank/mis-sized.
-        // A one-off resize right after load, plus an observer for any later
-        // container size change (orientation change, panel toggling),
-        // keeps the canvas honest.
         map.resize();
         setMapReady(true);
       });
@@ -139,10 +156,19 @@ export function MapView({
 
       resizeObserver = new ResizeObserver(() => map.resize());
       resizeObserver.observe(mapContainerRef.current);
+
+      // One more correction a frame after mount, in case the container's
+      // final layout settles after Mapbox's own initial measurement.
+      requestAnimationFrame(() => map.resize());
+
+      window.addEventListener("resize", handleWindowResize);
+      window.addEventListener("orientationchange", handleWindowResize);
     })();
     return () => {
       cancelled = true;
       resizeObserver?.disconnect();
+      window.removeEventListener("resize", handleWindowResize);
+      window.removeEventListener("orientationchange", handleWindowResize);
       mapRef.current?.remove();
       mapRef.current = null;
     };
@@ -347,8 +373,12 @@ export function MapView({
       {regeocodeSummary && <Badge variant="warning">{regeocodeSummary}</Badge>}
 
       <div className="flex flex-col gap-4 lg:flex-row">
-        <div className="relative h-[50vh] min-h-[320px] flex-1 overflow-hidden rounded-lg border lg:h-[600px]">
-          <div ref={mapContainerRef} className="h-full w-full" />
+        {/* w-full alongside flex-1 keeps width explicit rather than relying
+            purely on flex cross-axis stretch; min-h is a hard floor a flex
+            item's computed height can never shrink below, so this pane
+            always has real, non-zero dimensions for Mapbox to measure. */}
+        <div className="relative h-[60vh] min-h-[360px] w-full flex-1 overflow-hidden rounded-lg border lg:h-[600px]">
+          <div ref={mapContainerRef} className="absolute inset-0 h-full w-full" />
           {jobs.length === 0 && (
             <div className="pointer-events-none absolute inset-0 flex items-center justify-center bg-background/70">
               <div className="flex items-center gap-2 rounded-md border bg-card px-3 py-2 text-sm text-muted-foreground shadow">
