@@ -3,6 +3,7 @@ import { Badge } from "@/components/ui/badge";
 import { getCurrentUser } from "@/lib/auth";
 import { listTechnicians, type TechnicianOption } from "@/services/job.service";
 import { listJobsForMap, ensurePropertyGeocoded, type MapJobItem } from "@/services/map.service";
+import { getTechnicianHome } from "@/services/user.service";
 import { MapView } from "./map-view";
 
 export const dynamic = "force-dynamic";
@@ -41,6 +42,7 @@ export default async function MapPage({ searchParams }: { searchParams: { date?:
   const technicianId = user?.role === "TECHNICIAN" ? user.id : searchParams.technicianId;
 
   const { technicians, jobs, dbOnline } = await loadMapData(dateISO, technicianId);
+  const technicianHome = dbOnline && technicianId ? await getTechnicianHome(technicianId).catch(() => null) : null;
 
   return (
     <div className="space-y-4">
@@ -65,6 +67,7 @@ export default async function MapPage({ searchParams }: { searchParams: { date?:
           canPlanForOthers={user?.role === "ADMIN" || user?.role === "OFFICE"}
           selfTechnicianId={user?.role === "TECHNICIAN" ? user.id : null}
           canRegeocode={user?.role === "ADMIN"}
+          technicianHomeAddress={technicianHome?.homeAddress ?? null}
           mapboxPublicToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""}
         />
       )}

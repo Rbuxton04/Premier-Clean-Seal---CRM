@@ -15,6 +15,7 @@ import type { MapJobItem } from "@/services/map.service";
 import type { TechnicianOption } from "@/services/job.service";
 import type { PlanRouteResult } from "@/services/route.service";
 import { PlanDayPanel } from "./plan-day-panel";
+import { HomeAddressSettings } from "./home-address-settings";
 import { regeocodeBadPropertiesAction } from "./actions";
 
 // Home view for the map: Leigh, Greater Manchester, at a zoom that comfortably
@@ -57,6 +58,7 @@ export function MapView({
   canPlanForOthers,
   selfTechnicianId,
   canRegeocode,
+  technicianHomeAddress,
   mapboxPublicToken,
 }: {
   dateISO: string;
@@ -67,6 +69,7 @@ export function MapView({
   canPlanForOthers: boolean;
   selfTechnicianId: string | null;
   canRegeocode: boolean;
+  technicianHomeAddress: string | null;
   mapboxPublicToken: string;
 }) {
   const router = useRouter();
@@ -78,6 +81,9 @@ export function MapView({
   const [planResult, setPlanResult] = useState<PlanRouteResult | null>(null);
   const [regeocoding, setRegeocoding] = useState(false);
   const [regeocodeSummary, setRegeocodeSummary] = useState<string | null>(null);
+  const [homeAddress, setHomeAddress] = useState(technicianHomeAddress);
+
+  useEffect(() => setHomeAddress(technicianHomeAddress), [technicianHomeAddress]);
 
   async function handleRegeocode() {
     setRegeocoding(true);
@@ -218,6 +224,19 @@ export function MapView({
         bounds.extend([stop.longitude, stop.latitude]);
       }
 
+      // Finish point — visually distinct (house icon, teal) from the plum
+      // numbered job stops and the slate-ink origin marker.
+      if (planResult.finish) {
+        const finishEl = document.createElement("div");
+        finishEl.style.cssText =
+          "background:#0F766E;color:#fff;border-radius:9999px;width:28px;height:28px;display:flex;align-items:center;justify-content:center;font-size:14px;border:2px solid white;box-shadow:0 1px 4px rgba(0,0,0,0.4);";
+        finishEl.textContent = "\u{1F3E0}";
+        routeMarkersRef.current.push(
+          new mapboxgl.Marker({ element: finishEl }).setLngLat([planResult.finish.longitude, planResult.finish.latitude]).addTo(map)
+        );
+        bounds.extend([planResult.finish.longitude, planResult.finish.latitude]);
+      }
+
       if (planResult.geometry) {
         map.addSource("route-line", { type: "geojson", data: { type: "Feature", geometry: planResult.geometry, properties: {} } });
         map.addLayer({
@@ -322,12 +341,22 @@ export function MapView({
         </div>
 
         <div className="w-full space-y-3 lg:w-96 lg:shrink-0">
+          {planningTechnician && canPlan && (
+            <HomeAddressSettings
+              key={`home:${planningTechnician.id}`}
+              technicianId={planningTechnician.id}
+              homeAddress={homeAddress}
+              onSaved={setHomeAddress}
+            />
+          )}
+
           {planningTechnician && canPlan ? (
             <PlanDayPanel
               key={`${planningTechnician.id}:${dateISO}`}
               dateISO={dateISO}
               technicianId={planningTechnician.id}
               technicianName={planningTechnician.name}
+              hasHomeAddress={Boolean(homeAddress)}
               onResult={setPlanResult}
             />
           ) : planningTechnician ? (

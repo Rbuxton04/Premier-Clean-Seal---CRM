@@ -2,12 +2,13 @@
 
 import { useEffect, useState } from "react";
 import Link from "next/link";
-import { Navigation, MapPin, Loader2, RotateCcw } from "lucide-react";
+import { Navigation, MapPin, Loader2, RotateCcw, Home } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Badge } from "@/components/ui/badge";
+import { Select } from "@/components/ui/select";
 import { planMyDayAction, geocodeOriginAction } from "./actions";
-import type { PlanRouteResult } from "@/services/route.service";
+import type { PlanRouteResult, FinishMode } from "@/services/route.service";
 import { buildGoogleMapsMultiStopUrl, buildGoogleMapsSingleStopUrl, buildAppleMapsSingleStopUrl, isIOS } from "@/lib/nav-links";
 
 type Phase = "idle" | "locating" | "origin-fallback" | "loading" | "done";
@@ -25,11 +26,13 @@ export function PlanDayPanel({
   dateISO,
   technicianId,
   technicianName,
+  hasHomeAddress,
   onResult,
 }: {
   dateISO: string;
   technicianId: string;
   technicianName: string;
+  hasHomeAddress: boolean;
   onResult: (result: PlanRouteResult | null) => void;
 }) {
   const [phase, setPhase] = useState<Phase>("idle");
@@ -37,12 +40,21 @@ export function PlanDayPanel({
   const [manualAddress, setManualAddress] = useState("");
   const [manualError, setManualError] = useState<string | null>(null);
   const [iOS, setIOS] = useState(false);
+  const [finishMode, setFinishMode] = useState<FinishMode>(hasHomeAddress ? "home" : "none");
+  const [customFinishAddress, setCustomFinishAddress] = useState("");
 
   useEffect(() => setIOS(isIOS()), []);
 
   async function submit(origin: { latitude: number; longitude: number } | null, originSource?: "geolocation" | "manual") {
     setPhase("loading");
-    const res = await planMyDayAction({ technicianId, dateISO, origin, originSource });
+    const res = await planMyDayAction({
+      technicianId,
+      dateISO,
+      origin,
+      originSource,
+      finishMode,
+      customFinishAddress: finishMode === "custom" ? customFinishAddress.trim() : null,
+    });
     setResult(res);
     onResult(res);
     setPhase("done");
@@ -96,6 +108,27 @@ export function PlanDayPanel({
           </button>
         )}
       </div>
+
+      {!result && (
+        <div className="space-y-1.5">
+          <label className="text-xs font-medium text-muted-foreground">Finish at</label>
+          <Select value={finishMode} onChange={(e) => setFinishMode(e.target.value as FinishMode)} className="h-8 text-sm">
+            <option value="home" disabled={!hasHomeAddress}>
+              {hasHomeAddress ? "Home (default)" : "Home (set an address above first)"}
+            </option>
+            <option value="none">No finish — end at last job</option>
+            <option value="custom">Custom address…</option>
+          </Select>
+          {finishMode === "custom" && (
+            <Input
+              value={customFinishAddress}
+              onChange={(e) => setCustomFinishAddress(e.target.value)}
+              placeholder="e.g. WN7 1AB"
+              className="h-8 text-sm"
+            />
+          )}
+        </div>
+      )}
 
       {phase === "idle" && (
         <div className="space-y-2">
@@ -188,12 +221,40 @@ export function PlanDayPanel({
                 </div>
               </li>
             ))}
+            {result.finish && (
+              <li className="flex items-start gap-2 rounded-md border bg-muted/20 px-2 py-1.5 text-sm">
+                <span className="mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full bg-[#0F766E] text-white">
+                  <Home className="h-3 w-3" />
+                </span>
+                <div className="min-w-0 flex-1">
+                  <p className="font-medium">{result.finish.label}</p>
+                  {result.finish.address && <p className="truncate text-xs text-muted-foreground">{result.finish.address}</p>}
+                  {result.finish.legDurationSeconds != null && (
+                    <p className="text-[11px] text-muted-foreground">
+                      {formatMinutes(result.finish.legDurationSeconds)} · {formatKm(result.finish.legDistanceMeters)} from previous stop
+                    </p>
+                  )}
+                </div>
+              </li>
+            )}
           </ol>
 
           <div className="flex flex-wrap gap-2 pt-1">
             <Button asChild size="sm">
               <a
-                href={buildGoogleMapsMultiStopUrl(result.origin, result.stops)}
+                href={buildGoogleMapsMultiStopUrl(
+                  result.origin,
+                  result.finish
+                    ? [
+                        ...result.stops,
+                        {
+                          latitude: result.finish.latitude,
+                          longitude: result.finish.longitude,
+                          address: result.finish.address ?? undefined,
+                        },
+                      ]
+                    : result.stops
+                )}
                 target="_blank"
                 rel="noreferrer"
               >

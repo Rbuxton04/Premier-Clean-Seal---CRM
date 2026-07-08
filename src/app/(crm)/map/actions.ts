@@ -2,10 +2,11 @@
 
 import { getCurrentUser } from "@/lib/auth";
 import { requireAdmin } from "@/lib/permissions";
-import { planDayInputSchema, geocodeAddressInputSchema } from "@/validators/route";
+import { planDayInputSchema, geocodeAddressInputSchema, setHomeAddressInputSchema } from "@/validators/route";
 import { planRoute, type PlanRouteResult } from "@/services/route.service";
 import { geocodeAddress, type GeocodeResult } from "@/services/geocode.service";
 import { regeocodeBadProperties, type RegeocodeSummary } from "@/services/map.service";
+import { setTechnicianHomeAddress } from "@/services/user.service";
 
 /**
  * "Plan my day" is available to the office (any technician) and to a
@@ -32,6 +33,8 @@ export async function planMyDayAction(input: unknown): Promise<PlanRouteResult> 
     dateISO: parsed.data.dateISO,
     origin: parsed.data.origin,
     originSource: parsed.data.originSource ?? null,
+    finishMode: parsed.data.finishMode,
+    customFinishAddress: parsed.data.customFinishAddress ?? null,
   });
 }
 
@@ -52,4 +55,42 @@ export async function geocodeOriginAction(input: unknown): Promise<GeocodeResult
 export async function regeocodeBadPropertiesAction(): Promise<RegeocodeSummary> {
   await requireAdmin();
   return regeocodeBadProperties();
+}
+
+export type SetHomeAddressResult = { ok: boolean; message: string; address?: string | null };
+
+/**
+ * Sets (or clears, on an empty address) a technician's saved "finish at
+ * home" address for the route planner. A technician can only set their own;
+ * admin/office can set anyone's — same office-roles gate as planMyDayAction.
+ * Geocoded here, GB-constrained, before saving, so a bad address is never
+ * cached as a home location.
+ */
+export async function setTechnicianHomeAddressAction(input: unknown): Promise<SetHomeAddressResult> {
+  const parsed = setHomeAddressInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, message: "Invalid request." };
+
+  const user = await getCurrentUser();
+  if (!user) return { ok: false, message: "Please sign in." };
+
+  const officeRoles = ["ADMIN", "OFFICE"];
+  if (user.role === "TECHNICIAN") {
+    if (parsed.data.technicianId !== user.id) return { ok: false, message: "You can only edit your own home address." };
+  } else if (!officeRoles.includes(user.role)) {
+    return { ok: false, message: "You do not have permission to edit this." };
+  }
+
+  const address = parsed.data.address.trim();
+  if (address.length === 0) {
+    await setTechnicianHomeAddress(parsed.data.technicianId, null, null, null);
+    return { ok: true, message: "Home address cleared.", address: null };
+  }
+
+  const geocoded = await geocodeAddress(address);
+  if (!geocoded) {
+    return { ok: false, message: "Couldn't locate that address — check it and try again." };
+  }
+
+  await setTechnicianHomeAddress(parsed.data.technicianId, address, geocoded.latitude, geocoded.longitude);
+  return { ok: true, message: "Home address saved.", address };
 }

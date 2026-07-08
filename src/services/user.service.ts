@@ -33,6 +33,25 @@ export async function setUserActive(id: string, active: boolean): Promise<void> 
   await db.user.update({ where: { id }, data: { active } });
 }
 
+export type TechnicianHome = { homeAddress: string | null; homeLatitude: number | null; homeLongitude: number | null };
+
+export async function getTechnicianHome(id: string): Promise<TechnicianHome | null> {
+  return db.user.findFirst({
+    where: { id, organisationId: ORG_ID },
+    select: { homeAddress: true, homeLatitude: true, homeLongitude: true },
+  });
+}
+
+/** address=null clears the saved home (used when a technician empties the field). latitude/longitude must be geocoded by the caller before saving — never store an address without matching coordinates. */
+export async function setTechnicianHomeAddress(
+  id: string,
+  address: string | null,
+  latitude: number | null,
+  longitude: number | null
+): Promise<void> {
+  await db.user.update({ where: { id }, data: { homeAddress: address, homeLatitude: latitude, homeLongitude: longitude } });
+}
+
 export type ClerkUserEvent = { clerkId: string; name: string; email: string };
 
 /**

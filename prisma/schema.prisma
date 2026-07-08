@@ -73,6 +73,15 @@ model User {
   jobsAssigned   Job[]
   enquiries      Enquiry[]
   createdAt      DateTime @default(now())
+
+  // Route planner "finish at home" end point. Geocoded once on save and
+  // cached, same GB-constrained pattern as Property lat/lng, so planRoute
+  // can use it as a fixed final destination without re-geocoding on every
+  // plan. Either the technician themselves or an admin/office user can set
+  // this — see setTechnicianHomeAddressAction.
+  homeAddress   String?
+  homeLatitude  Float?
+  homeLongitude Float?
 }
 
 model Permission {

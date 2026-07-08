@@ -1,5 +1,6 @@
-import { isMapboxServerConfigured, isWithinGB } from "@/services/geocode.service";
+import { geocodeAddress, isMapboxServerConfigured, isWithinGB } from "@/services/geocode.service";
 import { listJobsForMap, ensurePropertyGeocoded, type MapJobItem } from "@/services/map.service";
+import { getTechnicianHome } from "@/services/user.service";
 
 // The Mapbox Optimization API (true TSP solving) isn't available on this
 // account's plan/token — calling it returns "NotImplemented". The Directions
@@ -30,6 +31,17 @@ export type RouteStop = {
 
 export type RouteOrigin = { latitude: number; longitude: number; source: "geolocation" | "manual" | "first-job" };
 
+// The fixed finish point a plan can end at — origin stays first, this stays
+// last, and only the job stops in between get reordered for efficiency.
+export type RouteFinish = {
+  label: string;
+  address: string | null;
+  latitude: number;
+  longitude: number;
+  legDistanceMeters: number | null;
+  legDurationSeconds: number | null;
+};
+
 export type PlanRouteResult =
   | { ok: false; message: string }
   | {
@@ -37,6 +49,7 @@ export type PlanRouteResult =
       optimized: boolean;
       origin: RouteOrigin;
       stops: RouteStop[];
+      finish: RouteFinish | null;
       totalDistanceMeters: number | null;
       totalDurationSeconds: number | null;
       geometry: { type: "LineString"; coordinates: [number, number][] } | null;
@@ -44,14 +57,25 @@ export type PlanRouteResult =
       message?: string;
     };
 
+export type FinishMode = "home" | "none" | "custom";
+
 export type PlanRouteInput = {
   technicianId: string;
   dateISO: string;
   origin: { latitude: number; longitude: number } | null;
   originSource: "geolocation" | "manual" | null;
+  // Defaults to "home" when omitted — see resolveFinish.
+  finishMode?: FinishMode;
+  // Only used when finishMode is "custom"; geocoded for this plan only and
+  // never saved as the technician's home address.
+  customFinishAddress?: string | null;
 };
 
 type StopCandidate = { job: MapJobItem; latitude: number; longitude: number };
+
+// A resolved finish candidate before routing — same shape whether it came
+// from the technician's saved home or a one-off custom address.
+type FinishCandidate = { latitude: number; longitude: number; label: string; address: string | null };
 
 // Full postal address including postcode — this is the single source of
 // truth used both for the on-screen stop list and, in nav-links.ts, for the
@@ -98,32 +122,44 @@ export async function planRoute(input: PlanRouteInput): Promise<PlanRouteResult>
     ? { ...input.origin, source: input.originSource ?? "manual" }
     : { latitude: stopCandidates[0].latitude, longitude: stopCandidates[0].longitude, source: "first-job" };
 
+  const finishResolution = await resolveFinish(input.technicianId, input.finishMode ?? "home", input.customFinishAddress ?? null);
+
   if (!isMapboxServerConfigured()) {
-    return scheduledOrderFallback(stopCandidates, origin, unroutedJobIds, "Mapbox isn't configured — showing jobs in scheduled order.");
+    return scheduledOrderFallback(
+      stopCandidates,
+      origin,
+      unroutedJobIds,
+      "Mapbox isn't configured — showing jobs in scheduled order.",
+      finishResolution
+    );
   }
 
   // Sanity-check every coordinate before spending a Mapbox call on it — a
   // stray bad geocode (or a manually-typed origin outside GB) would
   // otherwise send Mapbox an input it can only reject, which used to surface
   // as an unexplained "temporarily unavailable".
-  const outOfBounds = [origin, ...stopCandidates].find((p) => !isWithinGB(p.latitude, p.longitude));
+  const outOfBounds = [origin, ...stopCandidates, ...(finishResolution.point ? [finishResolution.point] : [])].find(
+    (p) => !isWithinGB(p.latitude, p.longitude)
+  );
   if (outOfBounds) {
     return scheduledOrderFallback(
       stopCandidates,
       origin,
       unroutedJobIds,
-      "Route optimisation skipped: one or more coordinates are outside Great Britain — re-geocode the affected properties and try again."
+      "Route optimisation skipped: one or more coordinates are outside Great Britain — re-geocode the affected properties and try again.",
+      finishResolution
     );
   }
 
-  const optimized = await planOptimizedRoute(origin, stopCandidates);
+  const optimized = await planOptimizedRoute(origin, stopCandidates, finishResolution.point);
   if (!optimized.ok) {
     console.error(`Route optimisation fell back to scheduled order: ${optimized.reason}`);
     return scheduledOrderFallback(
       stopCandidates,
       origin,
       unroutedJobIds,
-      `Route optimisation failed (${optimized.reason}) — showing jobs in scheduled order.`
+      `Route optimisation failed (${optimized.reason}) — showing jobs in scheduled order.`,
+      finishResolution
     );
   }
 
@@ -142,23 +178,80 @@ export async function planRoute(input: PlanRouteInput): Promise<PlanRouteResult>
     };
   });
 
+  const finish: RouteFinish | null =
+    finishResolution.point && optimized.finishLeg
+      ? {
+          label: finishResolution.point.label,
+          address: finishResolution.point.address,
+          latitude: finishResolution.point.latitude,
+          longitude: finishResolution.point.longitude,
+          legDistanceMeters: optimized.finishLeg.distance,
+          legDurationSeconds: optimized.finishLeg.duration,
+        }
+      : null;
+
   return {
     ok: true,
     optimized: true,
     origin,
     stops,
+    finish,
     totalDistanceMeters: optimized.totalDistance,
     totalDurationSeconds: optimized.totalDuration,
     geometry: { type: "LineString", coordinates: optimized.geometryCoords },
     unroutedJobIds,
+    message: optimized.finishWarning ?? finishResolution.warning,
   };
+}
+
+/**
+ * Resolves the "finish at" choice for a plan into a concrete point, before
+ * any Mapbox call is made:
+ *  - "none": no finish point.
+ *  - "home": the technician's saved home (geocoded + cached on save — see
+ *    setTechnicianHomeAddress). Silently resolves to no finish when nothing
+ *    is saved yet, since the UI already defaults the toggle off in that case
+ *    and this must never error.
+ *  - "custom": a one-off address geocoded just for this plan (never saved).
+ *    Falls back to the saved home, then to no finish, if it can't be
+ *    located — never fails the whole plan over a bad finish address.
+ */
+async function resolveFinish(
+  technicianId: string,
+  mode: FinishMode,
+  customAddress: string | null
+): Promise<{ point: FinishCandidate | null; warning?: string }> {
+  if (mode === "none") return { point: null };
+
+  if (mode === "custom") {
+    const trimmed = customAddress?.trim() ?? "";
+    if (trimmed.length < 3) return { point: null };
+    const geocoded = await geocodeAddress(trimmed);
+    if (geocoded) {
+      return { point: { latitude: geocoded.latitude, longitude: geocoded.longitude, label: "Finish", address: trimmed } };
+    }
+    const home = await getTechnicianHomePoint(technicianId);
+    if (home) {
+      return { point: home, warning: `Couldn't locate "${trimmed}" as a finish point — used the saved home address instead.` };
+    }
+    return { point: null, warning: `Couldn't locate "${trimmed}" as a finish point — planned without a finish point.` };
+  }
+
+  return { point: await getTechnicianHomePoint(technicianId) };
+}
+
+async function getTechnicianHomePoint(technicianId: string): Promise<FinishCandidate | null> {
+  const home = await getTechnicianHome(technicianId);
+  if (!home || home.homeLatitude == null || home.homeLongitude == null) return null;
+  return { latitude: home.homeLatitude, longitude: home.homeLongitude, label: "Home", address: home.homeAddress };
 }
 
 function scheduledOrderFallback(
   stopCandidates: StopCandidate[],
   origin: RouteOrigin,
   unroutedJobIds: string[],
-  message: string
+  message: string,
+  finishResolution: { point: FinishCandidate | null; warning?: string }
 ): PlanRouteResult {
   // stopCandidates preserves listJobsForMap's orderBy: scheduledStart asc.
   const stops: RouteStop[] = stopCandidates.map((s, i) => ({
@@ -172,16 +265,27 @@ function scheduledOrderFallback(
     legDistanceMeters: null,
     legDurationSeconds: null,
   }));
+  const finish: RouteFinish | null = finishResolution.point
+    ? {
+        label: finishResolution.point.label,
+        address: finishResolution.point.address,
+        latitude: finishResolution.point.latitude,
+        longitude: finishResolution.point.longitude,
+        legDistanceMeters: null,
+        legDurationSeconds: null,
+      }
+    : null;
   return {
     ok: true,
     optimized: false,
     origin,
     stops,
+    finish,
     totalDistanceMeters: null,
     totalDurationSeconds: null,
     geometry: null,
     unroutedJobIds,
-    message,
+    message: finishResolution.warning ? `${message} ${finishResolution.warning}` : message,
   };
 }
 
@@ -193,13 +297,21 @@ type OptimizeResult =
       geometryCoords: [number, number][];
       totalDistance: number;
       totalDuration: number;
+      finishLeg: { distance: number; duration: number } | null;
+      finishWarning?: string;
     }
   | { ok: false; reason: string };
 
-async function planOptimizedRoute(origin: { latitude: number; longitude: number }, stops: StopCandidate[]): Promise<OptimizeResult> {
+async function planOptimizedRoute(
+  origin: { latitude: number; longitude: number },
+  stops: StopCandidate[],
+  finish: FinishCandidate | null
+): Promise<OptimizeResult> {
   // Decide the whole day's visiting order up front (nearest neighbour from
   // the origin), then route it in batches of at most MAX_STOPS_PER_BATCH —
   // batching only affects how many Directions calls it takes, not the order.
+  // finish is deliberately excluded from this ordering: it's a fixed last
+  // stop, not a candidate to reorder in.
   const ordered = nearestNeighbourOrder(origin, stops);
 
   let currentOrigin = origin;
@@ -222,7 +334,27 @@ async function planOptimizedRoute(origin: { latitude: number; longitude: number 
     currentOrigin = { latitude: last.latitude, longitude: last.longitude };
   }
 
-  return { ok: true, orderedStops, legs, geometryCoords, totalDistance, totalDuration };
+  // The finish point is routed as one extra leg from the last job stop,
+  // rather than folded into a batch's Directions call — this sidesteps the
+  // Directions API's 25-coordinate cap entirely (no per-batch arithmetic to
+  // reserve a slot) and keeps a finish that fails to route from failing the
+  // whole plan: it's simply dropped, with a warning surfaced to the caller.
+  let finishLeg: { distance: number; duration: number } | null = null;
+  let finishWarning: string | undefined;
+  if (finish) {
+    const finishResult = await callFinishLeg(currentOrigin, finish);
+    if (finishResult.ok) {
+      finishLeg = { distance: finishResult.distance, duration: finishResult.duration };
+      geometryCoords.push(...finishResult.geometryCoords);
+      totalDistance += finishResult.distance;
+      totalDuration += finishResult.duration;
+    } else {
+      console.error(`Finish-point routing failed: ${finishResult.reason}`);
+      finishWarning = "Couldn't route to the finish point — showing the route to the last job only.";
+    }
+  }
+
+  return { ok: true, orderedStops, legs, geometryCoords, totalDistance, totalDuration, finishLeg, finishWarning };
 }
 
 /** Great-circle distance in metres — used only to build a local visiting order, never sent to Mapbox. */
@@ -266,24 +398,25 @@ function nearestNeighbourOrder(origin: { latitude: number; longitude: number }, 
   return ordered;
 }
 
+type DirectionsRouteData = {
+  legs: Array<{ distance: number; duration: number }>;
+  geometryCoords: [number, number][];
+  totalDistance: number;
+  totalDuration: number;
+};
+type DirectionsFetchResult = { ok: true; data: DirectionsRouteData } | { ok: false; reason: string };
+
 /**
- * Single Mapbox Directions API call over a fixed, already-ordered list of
- * stops — returns real drive legs + route geometry for that order. Tries
- * the traffic-aware "driving-traffic" profile first (not available on every
- * account/region) and falls back to plain "driving" on any failure from
- * that first attempt, since a live-traffic estimate is a nice-to-have, not
- * something worth failing the whole route over.
+ * Shared Mapbox Directions API request over a semicolon-joined "lng,lat"
+ * coordinate string. Tries the traffic-aware "driving-traffic" profile first
+ * (not available on every account/region) and falls back to plain "driving"
+ * on any failure from that first attempt, since a live-traffic estimate is a
+ * nice-to-have, not something worth failing the whole route over. Used both
+ * for the batched job-stops call and the single-leg finish call below.
  */
-async function callMapboxDirections(
-  origin: { latitude: number; longitude: number },
-  orderedStops: StopCandidate[]
-): Promise<OptimizeResult> {
+async function fetchDirectionsRoute(coords: string): Promise<DirectionsFetchResult> {
   const token = process.env.MAPBOX_SECRET_TOKEN;
   if (!token) return { ok: false, reason: "MAPBOX_SECRET_TOKEN is not set" };
-
-  // Mapbox coordinate order is always longitude,latitude — a lat/lng swap
-  // here would both misplace pins and make every routing call fail.
-  const coords = [origin, ...orderedStops].map((p) => `${p.longitude},${p.latitude}`).join(";");
 
   async function requestProfile(profile: "driving-traffic" | "driving") {
     const url =
@@ -330,25 +463,59 @@ async function callMapboxDirections(
     }
 
     const route = data.routes[0];
-    // Coordinates are [origin, ...orderedStops], so there's one leg per
-    // stop: legs[i] is the drive arriving at orderedStops[i].
-    if (route.legs.length !== orderedStops.length) {
-      return { ok: false, reason: "Mapbox returned an unexpected number of legs" };
-    }
-
     return {
       ok: true,
-      orderedStops,
-      legs: route.legs,
-      geometryCoords: route.geometry.coordinates,
-      totalDistance: route.distance,
-      totalDuration: route.duration,
+      data: {
+        legs: route.legs,
+        geometryCoords: route.geometry.coordinates,
+        totalDistance: route.distance,
+        totalDuration: route.duration,
+      },
     };
   } catch (err) {
     const reason = err instanceof Error ? err.message : "network error";
     console.error("Mapbox Directions API request threw:", err);
     return { ok: false, reason };
   }
+}
+
+/** Directions call over a fixed, already-ordered list of stops — returns real drive legs + route geometry for that order. */
+async function callMapboxDirections(
+  origin: { latitude: number; longitude: number },
+  orderedStops: StopCandidate[]
+): Promise<OptimizeResult> {
+  // Mapbox coordinate order is always longitude,latitude — a lat/lng swap
+  // here would both misplace pins and make every routing call fail.
+  const coords = [origin, ...orderedStops].map((p) => `${p.longitude},${p.latitude}`).join(";");
+  const result = await fetchDirectionsRoute(coords);
+  if (!result.ok) return result;
+
+  // Coordinates are [origin, ...orderedStops], so there's one leg per stop:
+  // legs[i] is the drive arriving at orderedStops[i].
+  if (result.data.legs.length !== orderedStops.length) {
+    return { ok: false, reason: "Mapbox returned an unexpected number of legs" };
+  }
+
+  return {
+    ok: true,
+    orderedStops,
+    legs: result.data.legs,
+    geometryCoords: result.data.geometryCoords,
+    totalDistance: result.data.totalDistance,
+    totalDuration: result.data.totalDuration,
+    finishLeg: null,
+  };
+}
+
+/** Single-leg Directions call from the last routed point to the fixed finish point. */
+async function callFinishLeg(
+  from: { latitude: number; longitude: number },
+  to: { latitude: number; longitude: number }
+): Promise<{ ok: true; distance: number; duration: number; geometryCoords: [number, number][] } | { ok: false; reason: string }> {
+  const coords = `${from.longitude},${from.latitude};${to.longitude},${to.latitude}`;
+  const result = await fetchDirectionsRoute(coords);
+  if (!result.ok) return result;
+  return { ok: true, distance: result.data.totalDistance, duration: result.data.totalDuration, geometryCoords: result.data.geometryCoords };
 }
 
 function safeParseJson(text: string): { code?: string; message?: string } | null {
