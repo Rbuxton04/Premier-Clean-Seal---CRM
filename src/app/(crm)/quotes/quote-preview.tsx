@@ -39,8 +39,8 @@ export function QuotePreview({
   expiresAt?: Date | null;
 }) {
   return (
-    <div className="rounded-lg border bg-card p-6">
-      <div className="flex items-start justify-between">
+    <div className="rounded-lg border bg-card p-4 sm:p-6">
+      <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
           <p className="font-display text-sm font-semibold tracking-[0.18em] text-brand-plum">PREMIER CLEAN &amp; SEAL</p>
           <BrandSwoosh className="mt-1 h-2 w-32 text-brand-plum" />
@@ -64,28 +64,30 @@ export function QuotePreview({
         <p className="whitespace-pre-wrap text-sm">{scopeOfWorks || "—"}</p>
       </div>
 
-      <table className="mt-4 w-full text-sm">
-        <thead>
-          <tr className="border-b-2 border-brand-plum text-left text-xs uppercase tracking-wide text-muted-foreground">
-            <th className="py-1.5 font-medium">Description</th>
-            <th className="py-1.5 text-right font-medium">Qty</th>
-            <th className="py-1.5 font-medium">Unit</th>
-            <th className="py-1.5 text-right font-medium">Price</th>
-            <th className="py-1.5 text-right font-medium">Total</th>
-          </tr>
-        </thead>
-        <tbody>
-          {lineItems.map((item, i) => (
-            <tr key={i} className="border-b">
-              <td className="py-1.5 pr-2">{item.description || "—"}</td>
-              <td className="py-1.5 text-right">{item.quantity}</td>
-              <td className="py-1.5">{item.unit}</td>
-              <td className="py-1.5 text-right">{formatGBP(item.unitPrice)}</td>
-              <td className="py-1.5 text-right">{formatGBP(item.quantity * item.unitPrice)}</td>
+      <div className="mt-4 overflow-x-auto">
+        <table className="w-full min-w-[420px] text-sm">
+          <thead>
+            <tr className="border-b-2 border-brand-plum text-left text-xs uppercase tracking-wide text-muted-foreground">
+              <th className="py-1.5 font-medium">Description</th>
+              <th className="py-1.5 text-right font-medium">Qty</th>
+              <th className="py-1.5 font-medium">Unit</th>
+              <th className="py-1.5 text-right font-medium">Price</th>
+              <th className="py-1.5 text-right font-medium">Total</th>
             </tr>
-          ))}
-        </tbody>
-      </table>
+          </thead>
+          <tbody>
+            {lineItems.map((item, i) => (
+              <tr key={i} className="border-b">
+                <td className="py-1.5 pr-2">{item.description || "—"}</td>
+                <td className="py-1.5 text-right">{item.quantity}</td>
+                <td className="py-1.5">{item.unit}</td>
+                <td className="py-1.5 text-right">{formatGBP(item.unitPrice)}</td>
+                <td className="py-1.5 text-right">{formatGBP(item.quantity * item.unitPrice)}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
 
       <div className="ml-auto mt-3 w-56 space-y-1 text-sm">
         <div className="flex justify-between text-muted-foreground">

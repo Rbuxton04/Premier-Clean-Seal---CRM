@@ -84,13 +84,21 @@ export default async function CalendarPage({ searchParams }: { searchParams: { w
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex items-center gap-2">
-              <Link href={`/calendar?week=${toISODate(prevWeek)}${weekendParam}`} className="rounded-md border p-1.5 hover:bg-accent" aria-label="Previous week">
+              <Link
+                href={`/calendar?week=${toISODate(prevWeek)}${weekendParam}`}
+                className="flex items-center justify-center rounded-md border p-1.5 hover:bg-accent [@media(pointer:coarse)]:p-3"
+                aria-label="Previous week"
+              >
                 <ChevronLeft className="h-4 w-4" />
               </Link>
               <Link href={`/calendar?week=${toISODate(thisWeek)}${weekendParam}`} className="rounded-md border px-3 py-1.5 text-sm hover:bg-accent">
                 This week
               </Link>
-              <Link href={`/calendar?week=${toISODate(nextWeek)}${weekendParam}`} className="rounded-md border p-1.5 hover:bg-accent" aria-label="Next week">
+              <Link
+                href={`/calendar?week=${toISODate(nextWeek)}${weekendParam}`}
+                className="flex items-center justify-center rounded-md border p-1.5 hover:bg-accent [@media(pointer:coarse)]:p-3"
+                aria-label="Next week"
+              >
                 <ChevronRight className="h-4 w-4" />
               </Link>
               <span className="text-sm font-medium">

@@ -35,7 +35,7 @@ export function CustomerForm({ mode, id, defaults = {} }: { mode: "create" | "ed
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="phone">Phone</Label>
-          <Input id="phone" name="phone" defaultValue={defaults.phone} />
+          <Input id="phone" name="phone" type="tel" inputMode="tel" defaultValue={defaults.phone} />
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="email">Email</Label>

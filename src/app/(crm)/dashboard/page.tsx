@@ -125,7 +125,7 @@ export default async function DashboardPage() {
         )}
       </div>
 
-      <div className="grid grid-cols-2 gap-4 lg:grid-cols-4 xl:grid-cols-5">
+      <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {kpis.map((k) => (
           <Card key={k.label}>
             <CardHeader className="pb-1">
@@ -153,7 +153,7 @@ export default async function DashboardPage() {
 
       {insights && (
         <Card>
-          <CardHeader className="flex flex-row items-center justify-between space-y-0">
+          <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
             <CardTitle className="text-sm">AI business insights</CardTitle>
             <GenerateInsightButton />
           </CardHeader>

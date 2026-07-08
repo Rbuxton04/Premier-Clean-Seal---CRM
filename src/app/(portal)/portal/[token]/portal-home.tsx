@@ -223,7 +223,7 @@ function ContactForm({ token, customer }: { token: string; customer: PortalHome[
         </div>
         <div className="space-y-1.5">
           <Label htmlFor="contact-phone">Phone</Label>
-          <Input id="contact-phone" name="phone" defaultValue={customer.phone ?? ""} />
+          <Input id="contact-phone" name="phone" type="tel" inputMode="tel" defaultValue={customer.phone ?? ""} />
         </div>
       </div>
       {state?.message && <p className={state.ok ? "text-xs text-emerald-600" : "text-xs text-destructive"}>{state.message}</p>}

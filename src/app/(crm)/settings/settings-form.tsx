@@ -51,7 +51,7 @@ export function SettingsForm({ defaults }: Props) {
             />
             <Label htmlFor="vatRegistered">We are VAT registered</Label>
           </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-1.5">
               <Label htmlFor="vatRatePercent">VAT rate (%)</Label>
               <Input id="vatRatePercent" name="vatRatePercent" type="number" step="0.01"
@@ -73,7 +73,7 @@ export function SettingsForm({ defaults }: Props) {
             Applied automatically when a job completes. Both can still be changed per job.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="defaultWarrantyMonths">Default warranty (months)</Label>
             <Input id="defaultWarrantyMonths" name="defaultWarrantyMonths" type="number"
@@ -94,7 +94,7 @@ export function SettingsForm({ defaults }: Props) {
             A prefix followed by zeros. #Q-0000 produces #Q-0001, #Q-0002 and so on.
           </CardDescription>
         </CardHeader>
-        <CardContent className="grid grid-cols-2 gap-4">
+        <CardContent className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <div className="space-y-1.5">
             <Label htmlFor="quoteNumberFormat">Quote format</Label>
             <Input id="quoteNumberFormat" name="quoteNumberFormat" defaultValue={defaults.quoteNumberFormat} />

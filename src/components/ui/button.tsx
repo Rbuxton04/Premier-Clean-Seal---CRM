@@ -15,10 +15,13 @@ const buttonVariants = cva(
         destructive: "bg-destructive text-destructive-foreground hover:bg-destructive/90",
       },
       size: {
-        default: "h-9 px-4 py-2",
-        sm: "h-8 rounded-md px-3 text-xs",
-        lg: "h-10 rounded-md px-8",
-        icon: "h-9 w-9",
+        // [@media(pointer:coarse)]: bumps tap height on touchscreens
+        // (phones/tablets) toward the ~44px comfortable target without
+        // enlarging these buttons for mouse/desktop use.
+        default: "h-9 px-4 py-2 [@media(pointer:coarse)]:h-11",
+        sm: "h-8 rounded-md px-3 text-xs [@media(pointer:coarse)]:h-10",
+        lg: "h-10 rounded-md px-8 [@media(pointer:coarse)]:h-12",
+        icon: "h-9 w-9 [@media(pointer:coarse)]:h-11 [@media(pointer:coarse)]:w-11",
       },
     },
     defaultVariants: { variant: "default", size: "default" },

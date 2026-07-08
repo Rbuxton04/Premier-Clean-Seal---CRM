@@ -19,7 +19,7 @@ export function RevenueChart({ data6, data12 }: { data6: MonthlyRevenue[]; data1
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-sm">Revenue</CardTitle>
         <div className="flex gap-1">
           {(["6", "12"] as const).map((p) => (

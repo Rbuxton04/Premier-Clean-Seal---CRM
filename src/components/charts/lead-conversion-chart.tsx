@@ -16,7 +16,7 @@ export function LeadConversionChart({ data }: { data: LeadConversion }) {
 
   return (
     <Card>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0">
+      <CardHeader className="flex flex-row flex-wrap items-center justify-between gap-2 space-y-0">
         <CardTitle className="text-sm">Lead conversion</CardTitle>
         {hasData && <p className="text-xs text-muted-foreground">{data.conversionPct}% enquiry to job</p>}
       </CardHeader>
