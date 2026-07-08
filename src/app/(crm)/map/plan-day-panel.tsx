@@ -67,11 +67,21 @@ export function PlanDayPanel({
       return;
     }
     setPhase("locating");
-    navigator.geolocation.getCurrentPosition(
-      (pos) => submit({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }, "geolocation"),
-      () => setPhase("origin-fallback"),
-      { enableHighAccuracy: true, timeout: 8000 }
-    );
+    try {
+      // A Permissions-Policy block (as opposed to a user denying the
+      // browser's own prompt) can throw synchronously here rather than
+      // reaching the error callback below, depending on the browser — this
+      // is on-demand (only called from this button, never on page load), so
+      // either path just falls back to manual/first-job start, same as a
+      // normal permission denial.
+      navigator.geolocation.getCurrentPosition(
+        (pos) => submit({ latitude: pos.coords.latitude, longitude: pos.coords.longitude }, "geolocation"),
+        () => setPhase("origin-fallback"),
+        { enableHighAccuracy: true, timeout: 8000 }
+      );
+    } catch {
+      setPhase("origin-fallback");
+    }
   }
 
   async function useManualAddress() {

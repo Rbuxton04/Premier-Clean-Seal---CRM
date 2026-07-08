@@ -14,7 +14,13 @@ const nextConfig = {
           { key: "X-Frame-Options", value: "SAMEORIGIN" },
           { key: "X-Content-Type-Options", value: "nosniff" },
           { key: "Referrer-Policy", value: "strict-origin-when-cross-origin" },
-          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=()" },
+          // geolocation=(self) — the map/route planner's "Plan my day" uses
+          // the browser Geolocation API for the technician's live-location
+          // origin. geolocation=() blocked it outright (surfaced as a
+          // Permissions-Policy violation in the console) with the map still
+          // rendering separately below, but was left restrictive here too
+          // since nothing else in the app currently needs geolocation.
+          { key: "Permissions-Policy", value: "camera=(), microphone=(), geolocation=(self)" },
           { key: "Content-Security-Policy", value: "frame-ancestors 'self'; object-src 'none';" },
         ],
       },

@@ -105,10 +105,14 @@ export function MapView({
     router.push(`/map?${params.toString()}`);
   }
 
-  // Initialise the map once a public token is available.
+  // Initialise the map once a public token is available. Deliberately has no
+  // dependency on geolocation in any form — the map must render regardless
+  // of whether the browser later grants, denies, or blocks (by permissions
+  // policy) a location request made elsewhere (see PlanDayPanel).
   useEffect(() => {
     if (!mapboxPublicToken || !mapContainerRef.current || mapRef.current) return;
     let cancelled = false;
+    let resizeObserver: ResizeObserver | null = null;
     (async () => {
       const mapboxgl = (await import("mapbox-gl")).default;
       if (cancelled || !mapContainerRef.current) return;
@@ -120,11 +124,25 @@ export function MapView({
         zoom: DEFAULT_ZOOM,
       });
       map.addControl(new mapboxgl.NavigationControl(), "top-right");
-      map.on("load", () => setMapReady(true));
+      map.on("load", () => {
+        // The flex/lg: layout around the container can still be settling
+        // (or a mobile browser's address bar can still be resizing the
+        // viewport) when Mapbox first measures its canvas, which is the
+        // classic cause of a map that "loaded" but renders blank/mis-sized.
+        // A one-off resize right after load, plus an observer for any later
+        // container size change (orientation change, panel toggling),
+        // keeps the canvas honest.
+        map.resize();
+        setMapReady(true);
+      });
       mapRef.current = map;
+
+      resizeObserver = new ResizeObserver(() => map.resize());
+      resizeObserver.observe(mapContainerRef.current);
     })();
     return () => {
       cancelled = true;
+      resizeObserver?.disconnect();
       mapRef.current?.remove();
       mapRef.current = null;
     };
