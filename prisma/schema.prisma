@@ -59,6 +59,10 @@ enum Role {
   TECHNICIAN
   SALES
   READONLY
+  // Read-only, finance-scoped: the Finance area + invoice/quote/job
+  // financial totals and exports only. See src/lib/permissions.ts and
+  // src/app/(crm)/layout.tsx for the server-side route/action enforcement.
+  ACCOUNTANT
 }
 
 model User {

@@ -22,7 +22,8 @@ export type Resource =
   | "staff"
   | "audit"
   | "gdpr"
-  | "backups";
+  | "backups"
+  | "finance";
 
 /**
  * Sensible defaults baked into code, per the M12 brief — ADMIN always has
@@ -46,6 +47,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     insights: ["read"],
     search: ["read"],
     portal: ["read", "create", "update"],
+    finance: ["read"],
   },
   ESTIMATOR: {
     customers: ["read", "create", "update"],
@@ -83,6 +85,12 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     insights: ["read"],
     search: ["read"],
     portal: ["read"],
+  },
+  // Read-only and finance-scoped: no entry for any other resource, so
+  // every other can() check (customers, jobs, quotes, marketing, staff,
+  // settings, etc.) correctly returns false via the `?? []` fallback below.
+  ACCOUNTANT: {
+    finance: ["read"],
   },
 };
 
@@ -133,4 +141,15 @@ export async function requireAdmin(): Promise<CurrentUser> {
   if (!user) throw new ForbiddenError("Please sign in.");
   if (user.role !== "ADMIN") throw new ForbiddenError("This action is restricted to administrators.");
   return user;
+}
+
+/**
+ * Read gate for the Finance area (ADMIN/OFFICE/ACCOUNTANT by default, or an
+ * org override in the Permission table) — used by every page under
+ * src/app/(crm)/finance/ so direct navigation to a finance URL is re-checked
+ * server-side regardless of the (crm) layout's ACCOUNTANT route redirect.
+ */
+export async function canViewFinance(role: Role | null): Promise<boolean> {
+  if (!role) return false;
+  return can(role, "finance", "read");
 }

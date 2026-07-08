@@ -1,6 +1,6 @@
 import { z } from "zod";
 
-export const roles = ["ADMIN", "OFFICE", "ESTIMATOR", "TECHNICIAN", "SALES", "READONLY"] as const;
+export const roles = ["ADMIN", "OFFICE", "ESTIMATOR", "TECHNICIAN", "SALES", "READONLY", "ACCOUNTANT"] as const;
 
 export const roleLabels: Record<(typeof roles)[number], string> = {
   ADMIN: "Admin",
@@ -9,6 +9,7 @@ export const roleLabels: Record<(typeof roles)[number], string> = {
   TECHNICIAN: "Technician",
   SALES: "Sales",
   READONLY: "Read only",
+  ACCOUNTANT: "Accountant",
 };
 
 export const updateUserRoleSchema = z.object({
