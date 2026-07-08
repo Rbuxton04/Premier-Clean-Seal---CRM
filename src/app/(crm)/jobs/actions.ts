@@ -45,6 +45,9 @@ export async function updateJobAction(id: string, _prev: JobFormState, formData:
     depositPaid: formData.get("depositPaid") || undefined,
     notes: formData.get("notes") || undefined,
     internalNotes: formData.get("internalNotes") || undefined,
+    // Checkbox: absent from FormData when unchecked, so this always resolves
+    // to a definite true/false rather than leaving the field untouched.
+    isExternal: formData.get("isExternal") === "on",
   });
   if (!parsed.success) return { ok: false, message: "Please fix the errors below.", errors: fieldErrors(parsed.error) };
 

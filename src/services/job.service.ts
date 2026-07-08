@@ -37,6 +37,7 @@ export type JobDetail = {
   metresInstalled: unknown;
   customerSignature: string | null;
   satisfactionRating: number | null;
+  isExternal: boolean | null;
   customerId: string;
   technicianId: string | null;
   propertyId: string | null;
@@ -78,13 +79,14 @@ export type CalendarJobItem = {
   scheduledEnd: Date | null;
   technicianId: string | null;
   price: unknown;
+  isExternal: boolean | null;
   customer: { id: string; name: string };
-  property: { id: string; postcode: string } | null;
+  property: { id: string; postcode: string; latitude: number | null; longitude: number | null } | null;
 };
 
 const jobListInclude = {
   customer: { select: { id: true, name: true } },
-  property: { select: { id: true, postcode: true } },
+  property: { select: { id: true, postcode: true, latitude: true, longitude: true } },
   technician: { select: { id: true, name: true } },
 };
 
@@ -201,6 +203,7 @@ export async function updateJob(id: string, data: JobUpdateInput): Promise<void>
       balanceDue,
       notes: data.notes,
       internalNotes: data.internalNotes,
+      isExternal: data.isExternal,
     },
   });
 

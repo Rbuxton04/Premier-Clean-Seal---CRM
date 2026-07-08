@@ -54,6 +54,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                 depositPaid={job.depositPaid}
                 notes={job.notes}
                 internalNotes={job.internalNotes}
+                isExternal={job.isExternal}
                 technicians={technicians}
                 showFinancials={showFinancials}
               />

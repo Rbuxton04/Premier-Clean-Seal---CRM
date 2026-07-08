@@ -4,9 +4,12 @@ import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { listCalendarData } from "@/services/job.service";
 import type { TechnicianOption, CalendarJobItem } from "@/services/job.service";
+import { getCalendarWeather, type CalendarWeather } from "@/services/weather.service";
 import { CalendarBoard } from "./calendar-board";
 
 export const dynamic = "force-dynamic";
+
+const EMPTY_WEATHER: CalendarWeather = { areaForecastByDate: {}, jobForecastByJobId: {} };
 
 function getMonday(d: Date): Date {
   const date = new Date(d);
@@ -27,6 +30,15 @@ async function loadCalendar(weekStart: Date, weekEnd: Date) {
     return { ...data, dbOnline: true };
   } catch {
     return { technicians: [] as TechnicianOption[], scheduled: [] as CalendarJobItem[], unscheduled: [] as CalendarJobItem[], dbOnline: false };
+  }
+}
+
+/** Weather is purely informational — any failure here just hides the layer, never the calendar itself. */
+async function loadWeather(dateISOs: string[], scheduled: CalendarJobItem[]): Promise<CalendarWeather> {
+  try {
+    return await getCalendarWeather(dateISOs, scheduled);
+  } catch {
+    return EMPTY_WEATHER;
   }
 }
 
@@ -52,6 +64,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: { w
   const thisWeek = getMonday(new Date());
 
   const { technicians, scheduled, unscheduled, dbOnline } = await loadCalendar(weekStart, weekEnd);
+  const weather = dbOnline ? await loadWeather(days.map(toISODate), scheduled) : EMPTY_WEATHER;
   const weekendParam = includeWeekends ? "&weekends=1" : "";
 
   return (
@@ -93,7 +106,7 @@ export default async function CalendarPage({ searchParams }: { searchParams: { w
             </Link>
           </div>
 
-          <CalendarBoard days={days} technicians={technicians} scheduled={scheduled} unscheduled={unscheduled} />
+          <CalendarBoard days={days} technicians={technicians} scheduled={scheduled} unscheduled={unscheduled} weather={weather} />
         </>
       )}
     </div>

@@ -58,5 +58,10 @@ export const jobUpdateSchema = z.object({
   depositPaid: z.coerce.number().nonnegative().optional(),
   notes: z.string().optional(),
   internalNotes: z.string().optional(),
+  // Marks an outdoor/silicone-in-the-weather job so the calendar's rain
+  // warning shows more prominently for it. Always sent as a definite
+  // boolean by the checkbox on JobFieldsForm (never left unset by that
+  // form), but optional here since other callers of this schema don't touch it.
+  isExternal: z.boolean().optional(),
 });
 export type JobUpdateInput = z.infer<typeof jobUpdateSchema>;

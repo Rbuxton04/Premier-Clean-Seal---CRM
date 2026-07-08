@@ -385,6 +385,11 @@ model Job {
   status         JobStatus     @default(BOOKED)
   scheduledStart DateTime?
   scheduledEnd   DateTime?
+  // Milestone: weather layer on the calendar — marks outdoor/silicone-in-
+  // the-weather jobs so a rain forecast can be shown more prominently than
+  // for jobs where rain doesn't matter. Nullable/defaults unset rather than
+  // false so existing jobs aren't implicitly asserted as indoor.
+  isExternal     Boolean?
   actualStart    DateTime?
   actualEnd      DateTime?
 
@@ -413,6 +418,30 @@ model Job {
   updatedAt DateTime @updatedAt
 
   @@index([organisationId, status, scheduledStart])
+}
+
+// ---------------------------------------------------------------------------
+// Weather (calendar rain warnings) — not org-scoped, purely location/date
+// keyed, since the same forecast applies regardless of which org asked for
+// it. See src/services/weather.service.ts.
+// ---------------------------------------------------------------------------
+
+model WeatherCache {
+  id        String   @id @default(cuid())
+  // Rounded to 2 decimal places (~1.1km) so job locations a few streets
+  // apart share one cache entry/Open-Meteo call instead of each burning
+  // their own.
+  latitude  Float
+  longitude Float
+  date      DateTime // day this forecast is for, stored at UTC midnight
+  weatherCode                 Int
+  temperatureMaxC             Float
+  temperatureMinC             Float
+  precipitationProbabilityMax Int
+  precipitationSumMm          Float
+  fetchedAt DateTime @default(now())
+
+  @@unique([latitude, longitude, date])
 }
 
 // ---------------------------------------------------------------------------
