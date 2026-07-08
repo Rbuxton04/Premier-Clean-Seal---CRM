@@ -178,7 +178,7 @@ export function CalendarBoard({
                   <div key={dateKey(d)} className="text-center text-xs font-medium text-muted-foreground">
                     <div>{d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" })}</div>
                     {areaForecast && (
-                      <div className="text-[10px] font-normal opacity-80">
+                      <div className="text-xs font-normal opacity-80">
                         {weatherIcon(areaForecast.weatherCode)} {Math.round(areaForecast.temperatureMaxC)}°C
                       </div>
                     )}
