@@ -1,6 +1,6 @@
 "use client";
 
-import { useState, useTransition } from "react";
+import { useEffect, useState, useTransition } from "react";
 import Link from "next/link";
 import { Sparkles, X, ListFilter, ExternalLink } from "lucide-react";
 import { Button } from "@/components/ui/button";
@@ -37,11 +37,38 @@ function openAsListHref(query: SearchQuery): string | null {
   return null;
 }
 
-export function SearchApp({ aiConfigured, tags, technicians }: { aiConfigured: boolean; tags: string[]; technicians: string[] }) {
-  const [question, setQuestion] = useState("");
+export function SearchApp({
+  aiConfigured,
+  tags,
+  technicians,
+  initialQuery,
+}: {
+  aiConfigured: boolean;
+  tags: string[];
+  technicians: string[];
+  initialQuery?: string;
+}) {
+  const [question, setQuestion] = useState(initialQuery ?? "");
   const [outcome, setOutcome] = useState<SearchOutcome | null>(null);
   const [showFilterForm, setShowFilterForm] = useState(!aiConfigured);
   const [pending, startTransition] = useTransition();
+
+  // Handoff from the top-bar search box (?q=...) — run it once on arrival
+  // (or again if the header box is used again while already on this page),
+  // through whichever search mode is actually available.
+  const seedQuery: SearchQuery | undefined = initialQuery
+    ? { entity: "jobs", filters: { textContains: initialQuery }, sort: "newest" }
+    : undefined;
+
+  useEffect(() => {
+    if (!initialQuery || !initialQuery.trim()) return;
+    if (aiConfigured) {
+      runAiSearch(initialQuery);
+    } else {
+      runStructured({ entity: "jobs", filters: { textContains: initialQuery }, sort: "newest" });
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [initialQuery]);
 
   function runAiSearch(q: string) {
     if (!q.trim()) return;
@@ -129,7 +156,7 @@ export function SearchApp({ aiConfigured, tags, technicians }: { aiConfigured: b
       )}
 
       {showFilterForm && (
-        <SearchFilterForm initial={outcome?.query} tags={tags} technicians={technicians} pending={pending} onSubmit={runStructured} />
+        <SearchFilterForm initial={outcome?.query ?? seedQuery} tags={tags} technicians={technicians} pending={pending} onSubmit={runStructured} />
       )}
 
       {outcome?.clarification && (

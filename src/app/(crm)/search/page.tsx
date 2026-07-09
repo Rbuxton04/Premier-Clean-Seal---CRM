@@ -16,7 +16,7 @@ async function loadOptions() {
   }
 }
 
-export default async function SearchPage() {
+export default async function SearchPage({ searchParams }: { searchParams: { q?: string } }) {
   const { tags, technicians, dbOnline } = await loadOptions();
   const aiConfigured = isAiConfigured();
 
@@ -33,7 +33,14 @@ export default async function SearchPage() {
         </Badge>
       )}
 
-      {dbOnline && <SearchApp aiConfigured={aiConfigured} tags={tags.map((t) => t.name)} technicians={technicians.map((t) => t.name)} />}
+      {dbOnline && (
+        <SearchApp
+          aiConfigured={aiConfigured}
+          tags={tags.map((t) => t.name)}
+          technicians={technicians.map((t) => t.name)}
+          initialQuery={searchParams.q}
+        />
+      )}
     </div>
   );
 }
