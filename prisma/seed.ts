@@ -342,6 +342,19 @@ async function main() {
     console.log("Seeded sample technicians.");
   }
 
+  // Owner/dev account safeguard (runs every seed, not just first-run): force
+  // Roman's account to ADMIN regardless of its current role. Open dev mode
+  // signs in as a synthetic ADMIN and never touches this row, but once Clerk
+  // is enabled this is the real account the owner signs into, and a schema
+  // change or role reset must never leave it locked out of admin-only areas
+  // (including Finance). Never touches any other user's role.
+  await db.user.upsert({
+    where: { email: "roman@premiercleanandseal.co.uk" },
+    update: { role: "ADMIN" },
+    create: { organisationId: org.id, name: "Roman", email: "roman@premiercleanandseal.co.uk", role: "ADMIN" },
+  });
+  console.log("Ensured Roman's account is ADMIN.");
+
   // Sample jobs across statuses and days so the list and calendar aren't
   // empty on first view. Converts the seeded APPROVED quote into a job to
   // demonstrate that flow.
