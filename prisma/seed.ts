@@ -185,7 +185,7 @@ async function main() {
         suggestedLabourHrs: 3.5,
         quoteNotes: "Customer asked for white — Jasmine White is the closest sanitary-grade match in stock.",
         confidence: 82,
-        model: "gpt-4o",
+        model: "gpt-5-mini",
         editedByUser: false,
       },
     });

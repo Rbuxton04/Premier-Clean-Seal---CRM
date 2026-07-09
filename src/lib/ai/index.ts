@@ -3,7 +3,7 @@ import { OpenAIProvider } from "./providers/openai";
 import { AnthropicProvider } from "./providers/anthropic";
 
 const DEFAULT_MODELS: Record<string, string> = {
-  openai: "gpt-4o",
+  openai: "gpt-5-mini",
   anthropic: "claude-opus-4-8",
 };
 
@@ -18,7 +18,7 @@ export function currentAiModelName(): string {
 
 /**
  * Selects the provider from AI_PROVIDER/AI_API_KEY/AI_MODEL. AI_MODEL must
- * match whichever provider is selected (e.g. "gpt-4o" for openai,
+ * match whichever provider is selected (e.g. "gpt-5-mini" for openai,
  * "claude-opus-4-8" for anthropic) — see .env.example.
  */
 export function getAiProvider(): AIProvider {
