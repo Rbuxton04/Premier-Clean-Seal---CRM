@@ -330,30 +330,44 @@ async function main() {
   }
 
   // Sample technicians (idempotent)
-  const existingTechnicians = await db.user.count({ where: { organisationId: org.id, role: "TECHNICIAN" } });
+  const existingTechnicians = await db.user.count({ where: { organisationId: org.id, roles: { has: "TECHNICIAN" } } });
   if (existingTechnicians === 0) {
     await db.user.createMany({
       data: [
-        { organisationId: org.id, name: "Roman", email: "roman@premiercleanandseal.co.uk", role: "TECHNICIAN" },
-        { organisationId: org.id, name: "Danny", email: "danny@premiercleanandseal.co.uk", role: "TECHNICIAN" },
-        { organisationId: org.id, name: "Mia", email: "mia@premiercleanandseal.co.uk", role: "TECHNICIAN" },
+        { organisationId: org.id, name: "Roman", email: "roman@premiercleanandseal.co.uk", role: "TECHNICIAN", roles: ["TECHNICIAN"] },
+        { organisationId: org.id, name: "Danny", email: "danny@premiercleanandseal.co.uk", role: "TECHNICIAN", roles: ["TECHNICIAN"] },
+        { organisationId: org.id, name: "Mia", email: "mia@premiercleanandseal.co.uk", role: "TECHNICIAN", roles: ["TECHNICIAN"] },
       ],
     });
     console.log("Seeded sample technicians.");
   }
 
   // Owner/dev account safeguard (runs every seed, not just first-run): force
-  // Roman's account to ADMIN regardless of its current role. Open dev mode
-  // signs in as a synthetic ADMIN and never touches this row, but once Clerk
-  // is enabled this is the real account the owner signs into, and a schema
-  // change or role reset must never leave it locked out of admin-only areas
-  // (including Finance). Never touches any other user's role.
+  // Roman's account to hold BOTH ADMIN and TECHNICIAN regardless of its
+  // current roles -- the owner runs the office (Admin) and also works on
+  // the tools (Technician), so needs to appear on the calendar/map as a
+  // schedulable worker (see roles: { has: "TECHNICIAN" } in
+  // listTechnicians(), src/services/job.service.ts) while keeping full
+  // admin access. Open dev mode signs in as a synthetic ADMIN+TECHNICIAN
+  // user and never touches this row (see DEV_USER in src/lib/auth.ts), but
+  // once Clerk is enabled this is the real account the owner signs into,
+  // and a schema change or role reset must never leave it locked out of
+  // admin-only areas (including Finance) or off the worker lists. Never
+  // touches any other user's roles. `role` (singular) is the legacy
+  // column, mirrored here to ADMIN since roles[] is what every permission
+  // check actually reads.
   await db.user.upsert({
     where: { email: "roman@premiercleanandseal.co.uk" },
-    update: { role: "ADMIN" },
-    create: { organisationId: org.id, name: "Roman", email: "roman@premiercleanandseal.co.uk", role: "ADMIN" },
+    update: { role: "ADMIN", roles: ["ADMIN", "TECHNICIAN"] },
+    create: {
+      organisationId: org.id,
+      name: "Roman",
+      email: "roman@premiercleanandseal.co.uk",
+      role: "ADMIN",
+      roles: ["ADMIN", "TECHNICIAN"],
+    },
   });
-  console.log("Ensured Roman's account is ADMIN.");
+  console.log("Ensured Roman's account is ADMIN + TECHNICIAN.");
 
   // Sample jobs across statuses and days so the list and calendar aren't
   // empty on first view. Converts the seeded APPROVED quote into a job to

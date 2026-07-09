@@ -9,6 +9,7 @@ import { quoteStatuses, quoteStatusLabels, quoteStatusBadgeVariant } from "@/val
 import type { QuoteListItem } from "@/services/quote.service";
 import { DeleteQuoteButton } from "./delete-quote-button";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ async function loadQuotes(status?: string): Promise<{ quotes: QuoteListItem[]; d
 export default async function QuotesPage({ searchParams }: { searchParams: { status?: string } }) {
   const status = searchParams.status;
   const user = await getCurrentUser();
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = hasRole(user, "ADMIN");
   const { quotes, dbOnline } = await loadQuotes(status);
 
   return (

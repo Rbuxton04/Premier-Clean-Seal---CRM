@@ -121,9 +121,12 @@ export async function getJob(id: string): Promise<JobDetail | null> {
   return row as JobDetail | null;
 }
 
+// Anyone whose roles[] includes TECHNICIAN is a schedulable worker,
+// regardless of what other roles they also hold (e.g. an owner who is both
+// ADMIN and TECHNICIAN) -- see the multi-role brief in prisma/seed.ts.
 export async function listTechnicians(): Promise<TechnicianOption[]> {
   return db.user.findMany({
-    where: { organisationId: ORG_ID, active: true, role: { in: ["TECHNICIAN", "ADMIN"] } },
+    where: { organisationId: ORG_ID, active: true, roles: { has: "TECHNICIAN" } },
     select: { id: true, name: true },
     orderBy: { name: "asc" },
   });

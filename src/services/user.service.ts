@@ -10,6 +10,7 @@ export type StaffListItem = {
   name: string;
   email: string;
   role: Role;
+  roles: Role[];
   active: boolean;
   createdAt: Date;
 };
@@ -25,8 +26,18 @@ export async function getUser(id: string): Promise<StaffListItem | null> {
   return db.user.findFirst({ where: { id, organisationId: ORG_ID } });
 }
 
-export async function updateUserRole(id: string, role: Role): Promise<void> {
-  await db.user.update({ where: { id }, data: { role } });
+// Highest-to-lowest privilege, used only to derive the legacy single `role`
+// column from `roles[]` on every write -- application logic never reads
+// `role` for permission decisions, see hasRole()/hasAnyRole() in
+// src/lib/permissions.ts.
+const ROLE_PRIORITY: Role[] = ["ADMIN", "OFFICE", "ACCOUNTANT", "ESTIMATOR", "SALES", "TECHNICIAN", "READONLY"];
+
+export function primaryRole(roles: Role[]): Role {
+  return ROLE_PRIORITY.find((r) => roles.includes(r)) ?? "READONLY";
+}
+
+export async function updateUserRoles(id: string, roles: Role[]): Promise<void> {
+  await db.user.update({ where: { id }, data: { roles, role: primaryRole(roles) } });
 }
 
 export async function setUserActive(id: string, active: boolean): Promise<void> {
@@ -79,11 +90,11 @@ export async function upsertUserFromClerk(event: ClerkUserEvent): Promise<void> 
     return;
   }
 
-  const adminCount = await db.user.count({ where: { organisationId: ORG_ID, role: "ADMIN", active: true } });
+  const adminCount = await db.user.count({ where: { organisationId: ORG_ID, roles: { has: "ADMIN" }, active: true } });
   const role: Role = adminCount === 0 ? "ADMIN" : "READONLY";
 
   await db.user.create({
-    data: { organisationId: ORG_ID, clerkId: event.clerkId, name: event.name, email: event.email, role },
+    data: { organisationId: ORG_ID, clerkId: event.clerkId, name: event.name, email: event.email, role, roles: [role] },
   });
 }
 

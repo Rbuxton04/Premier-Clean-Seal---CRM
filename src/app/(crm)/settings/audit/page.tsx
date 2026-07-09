@@ -6,6 +6,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 import { listAuditLogs, listAuditResources } from "@/services/audit.service";
 import { listUsers } from "@/services/user.service";
 
@@ -13,7 +14,7 @@ export const dynamic = "force-dynamic";
 
 export default async function AuditLogPage({ searchParams }: { searchParams: { userId?: string; resource?: string } }) {
   const user = await getCurrentUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || !hasRole(user, "ADMIN")) {
     return (
       <div className="space-y-3">
         <h1 className="font-display text-2xl font-semibold tracking-tight">Audit log</h1>

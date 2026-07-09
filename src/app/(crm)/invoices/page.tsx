@@ -9,7 +9,7 @@ import { listInvoices } from "@/services/invoice.service";
 import { paymentStatusLabels } from "@/validators/job";
 import type { InvoiceListItem } from "@/services/invoice.service";
 import { getCurrentUser } from "@/lib/auth";
-import { canViewFinancials } from "@/lib/permissions";
+import { canViewFinancials, hasRole } from "@/lib/permissions";
 import { DeleteInvoiceButton } from "./delete-invoice-button";
 
 export const dynamic = "force-dynamic";
@@ -24,7 +24,7 @@ async function loadInvoices() {
 
 export default async function InvoicesPage() {
   const user = await getCurrentUser();
-  if (!canViewFinancials(user?.role ?? "READONLY")) {
+  if (!canViewFinancials(user?.roles ?? [])) {
     return (
       <div className="space-y-4">
         <div>
@@ -35,7 +35,7 @@ export default async function InvoicesPage() {
       </div>
     );
   }
-  const isAdmin = user?.role === "ADMIN";
+  const isAdmin = hasRole(user, "ADMIN");
   const { invoices, dbOnline } = await loadInvoices();
 
   return (

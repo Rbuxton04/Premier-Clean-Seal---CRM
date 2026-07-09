@@ -4,7 +4,7 @@ import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
 import { jobFormSchema, jobUpdateSchema } from "@/validators/job";
 import * as JobService from "@/services/job.service";
-import { canViewFinancials, requireAdmin, ForbiddenError } from "@/lib/permissions";
+import { canViewFinancials, requireAdmin, hasRole, hasAnyRole, ForbiddenError } from "@/lib/permissions";
 import { getCurrentUser } from "@/lib/auth";
 import { writeAudit, actorContext } from "@/lib/audit";
 import type { RecordActionResult } from "@/components/record-action-button";
@@ -55,14 +55,16 @@ export async function updateJobAction(id: string, _prev: JobFormState, formData:
   // Financial fields can never be changed by a role that isn't allowed to see
   // them, regardless of what the submitted form contained.
   const user = await getCurrentUser();
-  if (!user || !canViewFinancials(user.role)) {
+  if (!user || !canViewFinancials(user.roles)) {
     parsed.data.price = undefined;
     parsed.data.depositPaid = undefined;
   }
-  // TECHNICIAN can only update jobs assigned to them.
-  if (user?.role === "TECHNICIAN") {
+  // A pure TECHNICIAN (no ADMIN/OFFICE role too) can only update jobs
+  // assigned to them -- an ADMIN/OFFICE user who also holds TECHNICIAN
+  // keeps full access, most-permissive-wins.
+  if (hasRole(user, "TECHNICIAN") && !hasAnyRole(user, ["ADMIN", "OFFICE"])) {
     const job = await JobService.getJob(id);
-    if (!job || job.technicianId !== user.id) return { ok: false, message: "You can only update jobs assigned to you." };
+    if (!job || job.technicianId !== user!.id) return { ok: false, message: "You can only update jobs assigned to you." };
   }
 
   await JobService.updateJob(id, parsed.data);

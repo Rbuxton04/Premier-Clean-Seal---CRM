@@ -10,7 +10,7 @@ export const dynamic = "force-dynamic";
 
 export async function GET(): Promise<NextResponse> {
   const user = await getCurrentUser().catch(() => null);
-  if (!(await canViewFinance(user?.role ?? null))) {
+  if (!(await canViewFinance(user?.roles))) {
     return NextResponse.json({ message: "Finance is restricted to Admin, Office, and Accountant roles." }, { status: 403 });
   }
 

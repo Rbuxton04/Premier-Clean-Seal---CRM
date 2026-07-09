@@ -2,35 +2,35 @@
 
 import { headers } from "next/headers";
 import { revalidatePath } from "next/cache";
-import { updateUserRoleSchema } from "@/validators/staff";
+import { updateUserRolesSchema } from "@/validators/staff";
 import { requireAdmin, ForbiddenError } from "@/lib/permissions";
 import { writeAudit } from "@/lib/audit";
-import { getUser, updateUserRole, setUserActive } from "@/services/user.service";
+import { getUser, updateUserRoles, setUserActive } from "@/services/user.service";
 
 export type StaffFormState = { ok: boolean; message: string } | null;
 
-export async function updateUserRoleAction(userId: string, _prev: StaffFormState, formData: FormData): Promise<StaffFormState> {
-  const parsed = updateUserRoleSchema.safeParse({ role: formData.get("role") });
-  if (!parsed.success) return { ok: false, message: parsed.error.errors[0]?.message ?? "Pick a valid role." };
+export async function updateUserRolesAction(userId: string, _prev: StaffFormState, formData: FormData): Promise<StaffFormState> {
+  const parsed = updateUserRolesSchema.safeParse({ roles: formData.getAll("roles") });
+  if (!parsed.success) return { ok: false, message: parsed.error.errors[0]?.message ?? "Pick at least one role." };
 
   try {
     const actor = await requireAdmin();
     const before = await getUser(userId);
     if (!before) return { ok: false, message: "Staff member not found." };
 
-    await updateUserRole(userId, parsed.data.role);
+    await updateUserRoles(userId, parsed.data.roles);
     await writeAudit({
       userId: actor.id,
       action: "UPDATE",
-      resource: "user.role",
+      resource: "user.roles",
       resourceId: userId,
-      before: { role: before.role },
-      after: { role: parsed.data.role },
+      before: { roles: before.roles },
+      after: { roles: parsed.data.roles },
       ip: headers().get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     });
 
     revalidatePath("/settings/staff");
-    return { ok: true, message: "Role updated." };
+    return { ok: true, message: "Roles updated." };
   } catch (err) {
     if (err instanceof ForbiddenError) return { ok: false, message: err.message };
     throw err;

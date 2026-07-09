@@ -16,7 +16,7 @@ const tabs = [
 async function loadAccess(): Promise<{ allowed: boolean; dbOnline: boolean }> {
   try {
     const user = await getCurrentUser();
-    const allowed = await canViewFinance(user?.role ?? null);
+    const allowed = await canViewFinance(user?.roles);
     return { allowed, dbOnline: true };
   } catch {
     return { allowed: false, dbOnline: false };

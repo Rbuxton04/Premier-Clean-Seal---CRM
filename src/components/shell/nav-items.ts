@@ -61,20 +61,25 @@ export const navGroups: NavGroup[] = [
 // technician, on-the-phone feature.
 const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/calendar", "/map", "/gallery", "/documents"]);
 
-export function visibleNavGroups(role: Role | null): NavGroup[] {
+/** Single-role visibility rule that visibleNavGroups() unions across all of a user's roles — most-permissive wins. */
+function roleCanSeeItem(role: Role, item: NavItem): boolean {
+  if (role === "TECHNICIAN") return TECHNICIAN_ALLOWED_HREFS.has(item.href);
+  if (item.roles) return item.roles.includes(role);
+  // ACCOUNTANT is read-only and finance-scoped -- every item without its own
+  // roles allow-list (i.e. everything except Finance above) is hidden for
+  // it, same effect as the TECHNICIAN allow-list above but expressed the
+  // other way round since ACCOUNTANT's nav is the smaller list.
+  return role !== "ACCOUNTANT";
+}
+
+// Roles are additive: an item shows if ANY of the user's roles would show it
+// on its own (e.g. ADMIN + TECHNICIAN sees the full admin nav, not the
+// technician-restricted one, since ADMIN alone already grants everything).
+export function visibleNavGroups(roles: Role[]): NavGroup[] {
   return navGroups
     .map((group) => ({
       ...group,
-      items: group.items.filter((item) => {
-        if (role === "TECHNICIAN") return TECHNICIAN_ALLOWED_HREFS.has(item.href);
-        if (item.roles) return role != null && item.roles.includes(role);
-        // ACCOUNTANT is read-only and finance-scoped -- every item without
-        // its own roles allow-list (i.e. everything except Finance above)
-        // is hidden for it, same effect as the TECHNICIAN allow-list above
-        // but expressed the other way round since ACCOUNTANT's nav is the
-        // smaller list.
-        return role !== "ACCOUNTANT";
-      }),
+      items: group.items.filter((item) => roles.some((role) => roleCanSeeItem(role, item))),
     }))
     .filter((group) => group.items.length > 0);
 }

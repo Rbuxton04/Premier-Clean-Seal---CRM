@@ -8,12 +8,24 @@ import { db } from "@/lib/db";
  */
 export const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);
 
-export type CurrentUser = { id: string; clerkId: string | null; name: string; email: string; role: Role; active: boolean };
+// role is the legacy single-role column, kept only for display/back-compat.
+// roles is the source of truth for every permission check -- see
+// hasRole()/hasAnyRole() in src/lib/permissions.ts.
+export type CurrentUser = { id: string; clerkId: string | null; name: string; email: string; role: Role; roles: Role[]; active: boolean };
 
 // Dev mode has no real staff records, so every action is attributed to a
-// synthetic ADMIN — this is fine locally but must never happen once Clerk
-// keys are set in production (clerkEnabled gates that).
-const DEV_USER: CurrentUser = { id: "dev-admin", clerkId: null, name: "Dev Admin (open mode)", email: "dev@local", role: "ADMIN", active: true };
+// synthetic ADMIN who is also a TECHNICIAN (mirrors the real owner account's
+// roles — see prisma/seed.ts) — this is fine locally but must never happen
+// once Clerk keys are set in production (clerkEnabled gates that).
+const DEV_USER: CurrentUser = {
+  id: "dev-admin",
+  clerkId: null,
+  name: "Dev Admin (open mode)",
+  email: "dev@local",
+  role: "ADMIN",
+  roles: ["ADMIN", "TECHNICIAN"],
+  active: true,
+};
 
 /** Resolves the signed-in staff member, or null if unauthenticated / deactivated / not yet synced. */
 export async function getCurrentUser(): Promise<CurrentUser | null> {
@@ -43,5 +55,9 @@ export async function getCurrentUser(): Promise<CurrentUser | null> {
 
   if (!user || !user.active) return null;
 
-  return { id: user.id, clerkId: user.clerkId, name: user.name, email: user.email, role: user.role, active: user.active };
+  // Defensive fallback for a row that somehow predates the roles[] backfill
+  // (should never happen -- seed and every writer keep the two in sync).
+  const roles = user.roles.length > 0 ? user.roles : [user.role];
+
+  return { id: user.id, clerkId: user.clerkId, name: user.name, email: user.email, role: user.role, roles, active: user.active };
 }

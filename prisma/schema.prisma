@@ -72,7 +72,13 @@ model User {
   organisation   Organisation @relation(fields: [organisationId], references: [id])
   name           String
   email          String  @unique
+  // Legacy single-role column -- kept for backward compatibility, mirrored
+  // to the highest-priority entry in roles[] on every write (see
+  // primaryRole() in user.service.ts). No application logic reads this
+  // field anymore; roles[] is the source of truth. See hasRole()/
+  // hasAnyRole() in src/lib/permissions.ts.
   role           Role    @default(OFFICE)
+  roles          Role[]  @default([])
   active         Boolean @default(true)
   jobsAssigned   Job[]
   enquiries      Enquiry[]

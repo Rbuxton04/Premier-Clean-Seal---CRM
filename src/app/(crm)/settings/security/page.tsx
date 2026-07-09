@@ -4,6 +4,7 @@ import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 import { computeReadiness, type ReadinessStatus } from "@/services/readiness.service";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,7 @@ const statusIcon: Record<ReadinessStatus, JSX.Element> = {
 
 export default async function SecurityReadinessPage() {
   const user = await getCurrentUser();
-  if (!user || user.role !== "ADMIN") {
+  if (!user || !hasRole(user, "ADMIN")) {
     return (
       <div className="space-y-3">
         <h1 className="font-display text-2xl font-semibold tracking-tight">Go-live readiness</h1>

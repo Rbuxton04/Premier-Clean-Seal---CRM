@@ -1,6 +1,7 @@
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole, hasAnyRole } from "@/lib/permissions";
 import { listTechnicians, type TechnicianOption } from "@/services/job.service";
 import { listJobsForMap, ensurePropertyGeocoded, type MapJobItem } from "@/services/map.service";
 import { getTechnicianHome } from "@/services/user.service";
@@ -36,10 +37,11 @@ async function loadMapData(dateISO: string, technicianId?: string) {
 export default async function MapPage({ searchParams }: { searchParams: { date?: string; technicianId?: string } }) {
   const user = await getCurrentUser();
   const dateISO = searchParams.date ?? todayISO();
-  // TECHNICIAN always sees (and can only plan) their own day — the query
-  // param is ignored for them rather than trusted from the client, same
-  // scoping pattern as the jobs list.
-  const technicianId = user?.role === "TECHNICIAN" ? user.id : searchParams.technicianId;
+  // A pure TECHNICIAN (no ADMIN/OFFICE role too) always sees (and can only
+  // plan) their own day — the query param is ignored for them rather than
+  // trusted from the client, same scoping pattern as the jobs list.
+  const isTechnicianOnly = hasRole(user, "TECHNICIAN") && !hasAnyRole(user, ["ADMIN", "OFFICE"]);
+  const technicianId = isTechnicianOnly ? user!.id : searchParams.technicianId;
 
   const { technicians, jobs, dbOnline } = await loadMapData(dateISO, technicianId);
   const technicianHome = dbOnline && technicianId ? await getTechnicianHome(technicianId).catch(() => null) : null;
@@ -63,10 +65,10 @@ export default async function MapPage({ searchParams }: { searchParams: { date?:
           technicians={technicians}
           jobs={jobs}
           selectedTechnicianId={technicianId ?? null}
-          lockTechnician={user?.role === "TECHNICIAN"}
-          canPlanForOthers={user?.role === "ADMIN" || user?.role === "OFFICE"}
-          selfTechnicianId={user?.role === "TECHNICIAN" ? user.id : null}
-          canRegeocode={user?.role === "ADMIN"}
+          lockTechnician={isTechnicianOnly}
+          canPlanForOthers={hasAnyRole(user, ["ADMIN", "OFFICE"])}
+          selfTechnicianId={isTechnicianOnly ? user!.id : null}
+          canRegeocode={hasRole(user, "ADMIN")}
           technicianHomeAddress={technicianHome?.homeAddress ?? null}
           mapboxPublicToken={process.env.NEXT_PUBLIC_MAPBOX_TOKEN ?? ""}
         />

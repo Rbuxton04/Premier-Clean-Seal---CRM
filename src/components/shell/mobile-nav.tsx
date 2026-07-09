@@ -14,10 +14,10 @@ import type { Role } from "@prisma/client";
 // `hidden md:flex`, so it renders nothing below md) — same nav data via
 // nav-items.ts, presented as a slide-in panel with its own trigger since
 // there's no shared Dialog primitive in this codebase to build on.
-export function MobileNav({ role }: { role: Role | null }) {
+export function MobileNav({ roles }: { roles: Role[] }) {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
-  const groups = visibleNavGroups(role);
+  const groups = visibleNavGroups(roles);
 
   // Close on navigation and on Escape; lock body scroll while open so the
   // page behind the drawer doesn't scroll along with it.

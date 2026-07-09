@@ -12,7 +12,7 @@ export const roleLabels: Record<(typeof roles)[number], string> = {
   ACCOUNTANT: "Accountant",
 };
 
-export const updateUserRoleSchema = z.object({
-  role: z.enum(roles),
+export const updateUserRolesSchema = z.object({
+  roles: z.array(z.enum(roles)).min(1, "Pick at least one role."),
 });
-export type UpdateUserRoleInput = z.infer<typeof updateUserRoleSchema>;
+export type UpdateUserRolesInput = z.infer<typeof updateUserRolesSchema>;

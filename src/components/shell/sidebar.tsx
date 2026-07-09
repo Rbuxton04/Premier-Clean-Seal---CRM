@@ -9,9 +9,9 @@ import { BrandSwoosh } from "./brand-swoosh";
 import { visibleNavGroups } from "./nav-items";
 import type { Role } from "@prisma/client";
 
-export function Sidebar({ role }: { role: Role | null }) {
+export function Sidebar({ roles }: { roles: Role[] }) {
   const pathname = usePathname();
-  const groups = visibleNavGroups(role);
+  const groups = visibleNavGroups(roles);
 
   return (
     <aside className="hidden md:flex w-60 shrink-0 flex-col bg-brand-slate-ink text-brand-silver">

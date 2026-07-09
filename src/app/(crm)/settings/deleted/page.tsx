@@ -4,6 +4,7 @@ import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 import { listDeletedItems, type DeletedItems } from "@/services/deleted-items.service";
 import { RestoreJobButton, RestoreQuoteButton, RestoreInvoiceButton } from "./restore-buttons";
 
@@ -37,7 +38,7 @@ export default async function DeletedItemsPage() {
         </p>
       </div>
 
-      {user?.role !== "ADMIN" ? (
+      {!hasRole(user, "ADMIN") ? (
         <Badge variant="warning">Deleted items are restricted to administrators.</Badge>
       ) : (
         <DeletedItemsContent />

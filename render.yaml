@@ -52,9 +52,10 @@ services:
       - key: CRON_SECRET
         sync: false
 
-  # Milestone 12: daily logical database backup to R2, same CRON_SECRET
-  # pattern as the crons above. No-ops gracefully (logs a warning, doesn't
-  # fail) if R2_* env vars aren't set on the web service yet.
+  # Milestone 12: daily logical database backup to Supabase Storage, same
+  # CRON_SECRET pattern as the crons above. No-ops gracefully (logs a
+  # warning, doesn't fail) if the Supabase Storage env vars aren't set on
+  # the web service yet.
   - type: cron
     name: premier-crm-backup-cron
     runtime: node

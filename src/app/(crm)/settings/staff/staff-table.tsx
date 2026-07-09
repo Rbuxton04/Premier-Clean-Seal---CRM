@@ -5,24 +5,32 @@ import { useFormState } from "react-dom";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import { Select } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { roles, roleLabels } from "@/validators/staff";
-import { updateUserRoleAction, setUserActiveAction, type StaffFormState } from "./actions";
+import { updateUserRolesAction, setUserActiveAction, type StaffFormState } from "./actions";
 import type { StaffListItem } from "@/services/user.service";
 
+// Multi-select: a user can hold several roles at once (e.g. an owner who is
+// both Admin and Technician) — capabilities are additive, most-permissive
+// wins, see src/lib/permissions.ts.
 function RoleCell({ member }: { member: StaffListItem }) {
-  const action = updateUserRoleAction.bind(null, member.id);
+  const action = updateUserRolesAction.bind(null, member.id);
   const [state, formAction] = useFormState<StaffFormState, FormData>(action, null);
 
   return (
-    <form action={formAction} className="flex items-center gap-2">
-      <Select name="role" defaultValue={member.role} className="h-8 w-36">
+    <form action={formAction} className="flex flex-col items-start gap-1.5">
+      <div className="flex flex-wrap gap-x-3 gap-y-1">
         {roles.map((r) => (
-          <option key={r} value={r}>{roleLabels[r]}</option>
+          <label key={r} className="flex items-center gap-1.5 text-xs">
+            <Checkbox name="roles" value={r} defaultChecked={member.roles.includes(r)} />
+            {roleLabels[r]}
+          </label>
         ))}
-      </Select>
-      <Button type="submit" size="sm" variant="outline">Save</Button>
-      {state && !state.ok && <span className="text-xs text-destructive">{state.message}</span>}
+      </div>
+      <div className="flex items-center gap-2">
+        <Button type="submit" size="sm" variant="outline">Save</Button>
+        {state && !state.ok && <span className="text-xs text-destructive">{state.message}</span>}
+      </div>
     </form>
   );
 }
@@ -36,7 +44,7 @@ export function StaffTable({ staff, currentUserId }: { staff: StaffListItem[]; c
         <TableRow>
           <TableHead>Name</TableHead>
           <TableHead>Email</TableHead>
-          <TableHead>Role</TableHead>
+          <TableHead>Roles</TableHead>
           <TableHead>Status</TableHead>
           <TableHead>Joined</TableHead>
           <TableHead />

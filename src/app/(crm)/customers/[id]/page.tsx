@@ -7,6 +7,7 @@ import { listProductOptions } from "@/services/property.service";
 import { listAlbums, listDocuments } from "@/services/media.service";
 import { listPortalTokens } from "@/services/portal.service";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -32,7 +33,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
   const documents = await listDocuments({ customerId: customer.id }).catch(() => []);
   const portalTokens = await listPortalTokens(customer.id).catch(() => []);
   const currentUser = await getCurrentUser();
-  const isAdmin = currentUser?.role === "ADMIN";
+  const isAdmin = hasRole(currentUser, "ADMIN");
 
   const stat = (label: string, value: string) => (
     <div className="rounded-lg border bg-card px-4 py-3">

@@ -11,7 +11,7 @@ import type { JobListItem } from "@/services/job.service";
 import { JobFilters } from "./job-filters";
 import { DeleteJobButton } from "./delete-job-button";
 import { getCurrentUser } from "@/lib/auth";
-import { canViewFinancials } from "@/lib/permissions";
+import { canViewFinancials, hasRole, hasAnyRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -27,11 +27,13 @@ async function loadJobs(status?: string, technicianId?: string) {
 export default async function JobsPage({ searchParams }: { searchParams: { status?: string; technicianId?: string } }) {
   const { status } = searchParams;
   const user = await getCurrentUser();
-  // TECHNICIAN only ever sees their own assigned jobs — the query param is
-  // ignored for them rather than trusted from the client.
-  const technicianId = user?.role === "TECHNICIAN" ? user.id : searchParams.technicianId;
-  const showFinancials = canViewFinancials(user?.role ?? "READONLY");
-  const isAdmin = user?.role === "ADMIN";
+  // A pure TECHNICIAN (no ADMIN/OFFICE role too) only ever sees their own
+  // assigned jobs — the query param is ignored for them rather than trusted
+  // from the client.
+  const isTechnicianOnly = hasRole(user, "TECHNICIAN") && !hasAnyRole(user, ["ADMIN", "OFFICE"]);
+  const technicianId = isTechnicianOnly ? user!.id : searchParams.technicianId;
+  const showFinancials = canViewFinancials(user?.roles ?? []);
+  const isAdmin = hasRole(user, "ADMIN");
   const { jobs, technicians, dbOnline } = await loadJobs(status, technicianId);
 
   return (

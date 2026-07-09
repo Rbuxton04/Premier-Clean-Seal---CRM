@@ -12,7 +12,7 @@ import { applicationAreaLabels } from "@/validators/completion";
 import { JobFieldsForm } from "./job-fields-form";
 import { DeleteJobButton } from "../delete-job-button";
 import { getCurrentUser } from "@/lib/auth";
-import { canViewFinancials } from "@/lib/permissions";
+import { canViewFinancials, hasRole, hasAnyRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -20,9 +20,10 @@ export default async function JobDetailPage({ params }: { params: { id: string }
   const job = await getJob(params.id);
   if (!job) notFound();
   const user = await getCurrentUser();
-  // TECHNICIAN can only open jobs assigned to them.
-  if (user?.role === "TECHNICIAN" && job.technicianId !== user.id) notFound();
-  const showFinancials = canViewFinancials(user?.role ?? "READONLY");
+  // A pure TECHNICIAN (no ADMIN/OFFICE role too) can only open jobs assigned to them.
+  const isTechnicianOnly = hasRole(user, "TECHNICIAN") && !hasAnyRole(user, ["ADMIN", "OFFICE"]);
+  if (isTechnicianOnly && job.technicianId !== user!.id) notFound();
+  const showFinancials = canViewFinancials(user?.roles ?? []);
   const technicians = await listTechnicians();
 
   return (
@@ -38,7 +39,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
               {jobStatusLabels[job.status as keyof typeof jobStatusLabels] ?? job.status}
             </Badge>
           </div>
-          {user?.role === "ADMIN" && <DeleteJobButton jobId={job.id} jobNumber={job.jobNumber} redirectTo="/jobs" />}
+          {hasRole(user, "ADMIN") && <DeleteJobButton jobId={job.id} jobNumber={job.jobNumber} redirectTo="/jobs" />}
         </div>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
       </div>

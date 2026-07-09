@@ -14,6 +14,7 @@ import { QuotePreview } from "../quote-preview";
 import { QuoteActions } from "./quote-actions";
 import { DeleteQuoteButton } from "../delete-quote-button";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 
 export const dynamic = "force-dynamic";
 
@@ -38,7 +39,7 @@ export default async function QuoteDetailPage({ params }: { params: { id: string
               {quoteStatusLabels[ds as keyof typeof quoteStatusLabels] ?? ds}
             </Badge>
           </div>
-          {user?.role === "ADMIN" && <DeleteQuoteButton quoteId={quote.id} quoteNumber={quote.quoteNumber} redirectTo="/quotes" />}
+          {hasRole(user, "ADMIN") && <DeleteQuoteButton quoteId={quote.id} quoteNumber={quote.quoteNumber} redirectTo="/quotes" />}
         </div>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
         {quote.status === "APPROVED" && quote.approvedName && (

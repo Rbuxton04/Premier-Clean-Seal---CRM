@@ -1,5 +1,6 @@
 import { getOrgSettings } from "@/lib/settings";
 import { getCurrentUser } from "@/lib/auth";
+import { hasRole } from "@/lib/permissions";
 import { SettingsForm } from "./settings-form";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
@@ -10,7 +11,7 @@ export default async function SettingsPage() {
   try {
     const org = await getOrgSettings();
     const user = await getCurrentUser();
-    const isAdmin = user?.role === "ADMIN";
+    const isAdmin = hasRole(user, "ADMIN");
     return (
       <div className="space-y-6">
         <div>

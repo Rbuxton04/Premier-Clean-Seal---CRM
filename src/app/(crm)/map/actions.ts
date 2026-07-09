@@ -1,7 +1,7 @@
 "use server";
 
 import { getCurrentUser } from "@/lib/auth";
-import { requireAdmin } from "@/lib/permissions";
+import { requireAdmin, hasRole, hasAnyRole } from "@/lib/permissions";
 import { planDayInputSchema, geocodeAddressInputSchema, setHomeAddressInputSchema } from "@/validators/route";
 import { planRoute, type PlanRouteResult } from "@/services/route.service";
 import { geocodeAddress, type GeocodeResult } from "@/services/geocode.service";
@@ -21,10 +21,10 @@ export async function planMyDayAction(input: unknown): Promise<PlanRouteResult> 
   const user = await getCurrentUser();
   if (!user) return { ok: false, message: "Please sign in." };
 
-  const officeRoles = ["ADMIN", "OFFICE"];
-  if (user.role === "TECHNICIAN") {
+  // A pure TECHNICIAN (no ADMIN/OFFICE role too) can only plan their own day.
+  if (hasRole(user, "TECHNICIAN") && !hasAnyRole(user, ["ADMIN", "OFFICE"])) {
     if (parsed.data.technicianId !== user.id) return { ok: false, message: "You can only plan your own day." };
-  } else if (!officeRoles.includes(user.role)) {
+  } else if (!hasAnyRole(user, ["ADMIN", "OFFICE"])) {
     return { ok: false, message: "You do not have permission to plan routes." };
   }
 
@@ -73,10 +73,10 @@ export async function setTechnicianHomeAddressAction(input: unknown): Promise<Se
   const user = await getCurrentUser();
   if (!user) return { ok: false, message: "Please sign in." };
 
-  const officeRoles = ["ADMIN", "OFFICE"];
-  if (user.role === "TECHNICIAN") {
+  // A pure TECHNICIAN (no ADMIN/OFFICE role too) can only edit their own home address.
+  if (hasRole(user, "TECHNICIAN") && !hasAnyRole(user, ["ADMIN", "OFFICE"])) {
     if (parsed.data.technicianId !== user.id) return { ok: false, message: "You can only edit your own home address." };
-  } else if (!officeRoles.includes(user.role)) {
+  } else if (!hasAnyRole(user, ["ADMIN", "OFFICE"])) {
     return { ok: false, message: "You do not have permission to edit this." };
   }
 

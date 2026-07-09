@@ -96,24 +96,28 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
 
 const FINANCIAL_ROLES: Role[] = ["ADMIN", "OFFICE"];
 
-/** Whether a role should see money figures (cost, margin, deposits, balances) at all. */
-export function canViewFinancials(role: Role): boolean {
-  return FINANCIAL_ROLES.includes(role);
+/** Whether ANY of a user's roles should see money figures (cost, margin, deposits, balances) — additive, most-permissive wins. */
+export function canViewFinancials(roles: Role[]): boolean {
+  return roles.some((role) => FINANCIAL_ROLES.includes(role));
 }
 
 /**
- * Checks a role's permission for a resource/action, reading any org-level
- * override from the Permission table first and falling back to the
- * hardcoded defaults above. ADMIN is always allowed everything.
+ * Checks whether ANY of a user's roles grants a resource/action, reading any
+ * org-level override from the Permission table first and falling back to the
+ * hardcoded defaults above. Roles are additive — most-permissive wins. ADMIN
+ * (in any position) is always allowed everything.
  */
-export async function can(role: Role, resource: Resource, action: Action): Promise<boolean> {
-  if (role === "ADMIN") return true;
+export async function can(roles: Role[], resource: Resource, action: Action): Promise<boolean> {
+  if (roles.includes("ADMIN")) return true;
 
-  const override = await db.permission.findUnique({
-    where: { organisationId_role_resource: { organisationId: ORG_ID, role, resource } },
-  });
-  const allowed = override?.actions ?? DEFAULT_PERMISSIONS[role]?.[resource] ?? [];
-  return allowed.includes(action);
+  for (const role of roles) {
+    const override = await db.permission.findUnique({
+      where: { organisationId_role_resource: { organisationId: ORG_ID, role, resource } },
+    });
+    const allowed = override?.actions ?? DEFAULT_PERMISSIONS[role]?.[resource] ?? [];
+    if (allowed.includes(action)) return true;
+  }
+  return false;
 }
 
 export class ForbiddenError extends Error {
@@ -121,6 +125,16 @@ export class ForbiddenError extends Error {
     super(message);
     this.name = "ForbiddenError";
   }
+}
+
+/** Whether a user holds a given role — the additive-roles building block every other check is written in terms of. Null-safe. */
+export function hasRole(user: CurrentUser | null | undefined, role: Role): boolean {
+  return Boolean(user?.roles.includes(role));
+}
+
+/** Whether a user holds ANY of the given roles. Null-safe. */
+export function hasAnyRole(user: CurrentUser | null | undefined, roles: Role[]): boolean {
+  return Boolean(user && user.roles.some((r) => roles.includes(r)));
 }
 
 /**
@@ -132,14 +146,14 @@ export class ForbiddenError extends Error {
 export async function requirePermission(resource: Resource, action: Action): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) throw new ForbiddenError("Please sign in.");
-  if (!(await can(user.role, resource, action))) throw new ForbiddenError(`Your role (${user.role}) cannot ${action} ${resource}.`);
+  if (!(await can(user.roles, resource, action))) throw new ForbiddenError(`Your roles (${user.roles.join(", ")}) cannot ${action} ${resource}.`);
   return user;
 }
 
 export async function requireAdmin(): Promise<CurrentUser> {
   const user = await getCurrentUser();
   if (!user) throw new ForbiddenError("Please sign in.");
-  if (user.role !== "ADMIN") throw new ForbiddenError("This action is restricted to administrators.");
+  if (!user.roles.includes("ADMIN")) throw new ForbiddenError("This action is restricted to administrators.");
   return user;
 }
 
@@ -149,7 +163,7 @@ export async function requireAdmin(): Promise<CurrentUser> {
  * src/app/(crm)/finance/ so direct navigation to a finance URL is re-checked
  * server-side regardless of the (crm) layout's ACCOUNTANT route redirect.
  */
-export async function canViewFinance(role: Role | null): Promise<boolean> {
-  if (!role) return false;
-  return can(role, "finance", "read");
+export async function canViewFinance(roles: Role[] | null | undefined): Promise<boolean> {
+  if (!roles || roles.length === 0) return false;
+  return can(roles, "finance", "read");
 }

@@ -12,7 +12,7 @@ const DAY_MS = 24 * 60 * 60 * 1000;
 
 export async function computeReadiness(): Promise<ReadinessItem[]> {
   const [adminCount, auditLogCount, lastBackupAt] = await Promise.all([
-    db.user.count({ where: { organisationId: ORG_ID, role: "ADMIN", active: true } }),
+    db.user.count({ where: { organisationId: ORG_ID, roles: { has: "ADMIN" }, active: true } }),
     db.auditLog.count({ where: { organisationId: ORG_ID } }),
     getLastBackupAt(),
   ]);

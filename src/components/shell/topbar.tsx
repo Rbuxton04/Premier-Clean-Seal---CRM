@@ -4,10 +4,10 @@ import { Badge } from "@/components/ui/badge";
 import { AccountMenu } from "@/components/shell/account-menu";
 import { MobileNav } from "@/components/shell/mobile-nav";
 
-export function Topbar({ devMode, role }: { devMode: boolean; role: Role | null }) {
+export function Topbar({ devMode, roles }: { devMode: boolean; roles: Role[] }) {
   return (
     <header className="flex h-14 items-center gap-2 border-b bg-card px-4 sm:gap-4 sm:px-6">
-      <MobileNav role={role} />
+      <MobileNav roles={roles} />
       <div className="min-w-0 flex-1 max-w-md">
         <Input placeholder="Search customers, jobs, quotes…  (⌘K coming soon)" aria-label="Search" />
       </div>
