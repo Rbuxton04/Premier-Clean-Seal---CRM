@@ -60,24 +60,25 @@ docker run --name premier-db -e POSTGRES_PASSWORD=dev -e POSTGRES_DB=premier_crm
 - **Numbering** — quote `#Q-0000`, invoice `#I-0000` (prefix + zeros = pad width). Counters
   increment atomically in `src/lib/numbering.ts`.
 
-## Cloudflare R2 (photo/video uploads)
+## Supabase Storage (photo/video uploads)
 
 The public quote-request form and enquiry pipeline accept photos and videos, uploaded
-directly to Cloudflare R2 (never proxied through the Render dyno). Until `R2_*` is set,
-the upload UI stays visible but uploads are skipped client-side — enquiries still submit
-fine, just without attachments.
+directly to Supabase Storage (never proxied through the Render dyno). Until
+`NEXT_PUBLIC_SUPABASE_URL` / `SUPABASE_SERVICE_ROLE_KEY` / `SUPABASE_STORAGE_BUCKET` are
+set, the upload UI stays visible but uploads are skipped client-side — enquiries still
+submit fine, just without attachments.
 
 To switch it on:
 
-1. Create an R2 bucket in the Cloudflare dashboard (e.g. `premier-crm`), and an API token
-   scoped to that bucket (Account → R2 → Manage API Tokens).
-2. Add to `.env` (and the Render dashboard): `R2_ACCOUNT_ID`, `R2_ACCESS_KEY_ID`,
-   `R2_SECRET_ACCESS_KEY`, `R2_BUCKET`.
-3. Add `@aws-sdk/client-s3` and `@aws-sdk/s3-request-presigner` (R2 is S3-compatible) and
-   implement `presignUpload()` in `src/lib/storage/r2.ts` — it already has the right shape
-   (`{ uploadUrl, publicUrl }`), the public form and `/api/uploads/presign` route call it as
-   soon as `isR2Configured()` returns true, no other code needs to change.
-4. Turn on public read (or a custom domain) for the bucket so `publicUrl`s are viewable.
+1. In the Supabase dashboard: Project Settings → API for the project URL and secret key;
+   Storage → create a bucket (private recommended — see `src/lib/storage/supabase.ts`).
+2. Add to `.env` (and the Render dashboard): `NEXT_PUBLIC_SUPABASE_URL`,
+   `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET`.
+3. That's it — `presignUpload()` in `src/lib/storage/supabase.ts` already has the right
+   shape (`{ uploadUrl, path }`), and the public form and `/api/uploads/presign` route call
+   it as soon as `isSupabaseStorageConfigured()` returns true, no other code needs to change.
+4. The bucket stays private — `getFileUrl()` mints short-lived signed URLs server-side for
+   viewing, so nothing needs to be made publicly readable.
 
 ## Quotes & e-approval
 
@@ -87,10 +88,10 @@ Quotes are built in-app (`/quotes`), rendered as a branded PDF (`@react-pdf/rend
 name + IP as the electronic acceptance; this is a reasonable acceptance for a trade quote, not
 a formal qualified e-signature service.
 
-- **PDF generation always works**, R2 or not — the download routes render on demand. If `R2_*`
-  is set, `sendQuote()` also persists a copy to `quotes/<number>.pdf` and stores the URL on
-  `Quote.pdfUrl` as a cache; add `@aws-sdk/client-s3` and implement `uploadBuffer()` in
-  `src/lib/storage/r2.ts` to switch this on (same seam shape as the presigned-upload one above).
+- **PDF generation always works**, Supabase Storage configured or not — the download routes
+  render on demand. If storage is configured, `sendQuote()` also persists a copy to
+  `quotes/<number>.pdf` via `uploadFile()` in `src/lib/storage/supabase.ts` and stores the
+  path on `Quote.pdfUrl` as a cache.
 - **Emailing needs `RESEND_API_KEY`.** Until it's set, "Send" still generates the approval
   token/link and marks the quote `SENT` — staff copy the link from the in-app banner instead of
   it being emailed. Add the key and `sendQuote()` starts emailing automatically, no other code
@@ -110,12 +111,13 @@ Free-tier notes: the service sleeps after ~15 min idle (first request is slow); 
 Postgres database **expires 30 days after creation** (14-day grace period to upgrade before
 Render deletes it and all data) — set a reminder and upgrade to the small paid tier (~£5–6/mo)
 before day 30 if you're keeping real data in it. All uploads
-will live on Cloudflare R2 (Milestone 2), never on the Render disk.
+will live on Supabase Storage, never on the Render disk.
 
 ## Backups
 
 Until on a paid Postgres plan with snapshots, run scheduled `pg_dump`s (a cron endpoint that
-streams a dump to R2 arrives with the cron infrastructure in Milestone 8). Restore drill:
+streams a dump to Supabase Storage arrives with the cron infrastructure in Milestone 8).
+Restore drill:
 
 ```bash
 pg_dump "$DATABASE_URL" > backup.sql

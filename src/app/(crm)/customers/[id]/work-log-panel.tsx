@@ -117,7 +117,7 @@ function WorkLogForm({ customerId, propertyId, products }: { customerId: string;
       <div className="space-y-1.5">
         <Label>Photos</Label>
         <div className="flex h-9 items-center gap-2 rounded-md border border-dashed px-3 text-xs text-muted-foreground">
-          <ImageOff className="h-3.5 w-3.5" /> Coming soon — needs Cloudflare R2 set up
+          <ImageOff className="h-3.5 w-3.5" /> Coming soon — needs Supabase Storage set up
         </div>
       </div>
 

@@ -73,8 +73,9 @@ export const enquiryStageLabels: Record<(typeof enquiryStages)[number], string> 
   FOLLOW_UP: "Follow-up",
 };
 
-// Descriptor for a file already uploaded to R2 (or, until R2 is wired, this
-// array is simply always empty — see src/lib/storage/r2.ts).
+// Descriptor for a file already uploaded to Supabase Storage (or, until
+// storage is configured, this array is simply always empty — see
+// src/lib/storage/supabase.ts).
 export const uploadedFileSchema = z.object({
   url: z.string().url(),
   thumbnailUrl: z.string().url().optional(),

@@ -1,17 +1,15 @@
 import { createClient, type SupabaseClient } from "@supabase/supabase-js";
 
 /**
- * Supabase Storage — replaces Cloudflare R2 (src/lib/storage/r2.ts, kept in
- * place unused for a later removal step) now that the database has also
- * moved to Supabase. Same shape as the R2 module deliberately, so callers
- * barely changed: presignUpload() for browser uploads, uploadFile() for
- * server-side uploads (generated PDFs), getFileUrl() for reading.
+ * Supabase Storage — the app's sole file storage backend, now that the
+ * database has also moved to Supabase. presignUpload() for browser uploads,
+ * uploadFile() for server-side uploads (generated PDFs), getFileUrl() for
+ * reading.
  *
  * The bucket is private — see getFileUrl(). Until NEXT_PUBLIC_SUPABASE_URL /
  * SUPABASE_SERVICE_ROLE_KEY / SUPABASE_STORAGE_BUCKET are set,
  * isSupabaseStorageConfigured() is false and every function below is either
- * skipped by its caller or fails soft (see each function) — same graceful
- * "not configured yet" degradation the R2 module had.
+ * skipped by its caller or fails soft (see each function).
  */
 export function isSupabaseStorageConfigured(): boolean {
   return Boolean(process.env.NEXT_PUBLIC_SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE_KEY && process.env.SUPABASE_STORAGE_BUCKET);
