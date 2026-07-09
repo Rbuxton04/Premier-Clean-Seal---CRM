@@ -15,6 +15,9 @@ type UploadedFile = { url: string; thumbnailUrl?: string; mimeType: string; size
 
 type SelectedFile = { file: File; previewUrl: string };
 
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15MB
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB -- a short phone video
+
 export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) {
   const [selectedFiles, setSelectedFiles] = useState<SelectedFile[]>([]);
   const [selectedWorkTypes, setSelectedWorkTypes] = useState<string[]>([]);
@@ -23,6 +26,7 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string[]>>({});
   const [success, setSuccess] = useState(false);
+  const [uploadWarning, setUploadWarning] = useState<string | null>(null);
   const [formRenderedAt] = useState(() => Date.now());
 
   function toggleWorkType(value: string) {
@@ -39,32 +43,50 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
     setSelectedFiles((prev) => prev.filter((f) => f.previewUrl !== previewUrl));
   }
 
-  async function uploadFiles(): Promise<UploadedFile[]> {
-    if (!photosEnabled || selectedFiles.length === 0) return [];
+  async function uploadFiles(): Promise<{ files: UploadedFile[]; failed: string[] }> {
+    if (!photosEnabled || selectedFiles.length === 0) return { files: [], failed: [] };
 
     const uploaded: UploadedFile[] = [];
+    const failed: string[] = [];
+
     for (const { file } of selectedFiles) {
+      const isVideo = file.type.startsWith("video");
+      const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+      if (file.size > maxBytes) {
+        failed.push(`${file.name} (too large — max ${isVideo ? "100MB" : "15MB"})`);
+        continue;
+      }
+
       try {
         const presignRes = await fetch("/api/uploads/presign", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ filename: file.name, contentType: file.type }),
+          body: JSON.stringify({ filename: file.name, contentType: file.type, sizeBytes: file.size, mediaOnly: true }),
         });
         const presign = await presignRes.json();
-        if (!presign.configured) continue; // storage not live yet — skip silently
+        if (!presignRes.ok) {
+          failed.push(`${file.name} (${presign.message ?? "upload rejected"})`);
+          continue;
+        }
+        if (!presign.configured) continue; // storage not live yet — skip silently, unrelated to per-file failures
 
-        await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        const putRes = await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type }, body: file });
+        if (!putRes.ok) {
+          failed.push(`${file.name} (upload failed)`);
+          continue;
+        }
+
         uploaded.push({
           url: presign.path,
           mimeType: file.type,
           sizeBytes: file.size,
-          kind: file.type.startsWith("video") ? "VIDEO" : "PHOTO",
+          kind: isVideo ? "VIDEO" : "PHOTO",
         });
       } catch {
-        // Skip this file rather than blocking the whole enquiry.
+        failed.push(`${file.name} (network error)`);
       }
     }
-    return uploaded;
+    return { files: uploaded, failed };
   }
 
   async function onSubmit(e: React.FormEvent<HTMLFormElement>) {
@@ -85,7 +107,12 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
     const data = new FormData(form);
     setSubmitting(true);
     try {
-      const files = await uploadFiles();
+      const { files, failed } = await uploadFiles();
+      setUploadWarning(
+        failed.length > 0
+          ? `Couldn't attach: ${failed.join(", ")}. The rest of your enquiry will still be sent${files.length > 0 ? " with the files that did upload." : "."}`
+          : null
+      );
 
       const res = await fetch("/api/public/enquiries", {
         method: "POST",
@@ -111,7 +138,8 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
       const json = await res.json();
 
       if (!res.ok || !json.ok) {
-        setError(json.message ?? "Something went wrong — please try again.");
+        const fileIssue = json.errors?.files?.[0];
+        setError(fileIssue ? `${json.message ?? "Please check the form and try again."} (${fileIssue})` : json.message ?? "Something went wrong — please try again.");
         setFieldErrors(json.errors ?? {});
         return;
       }
@@ -131,6 +159,7 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
         <p className="mt-2 text-sm text-muted-foreground">
           We&apos;ve received your enquiry and will be in touch within one working day. If it&apos;s urgent, feel free to call us directly.
         </p>
+        {uploadWarning && <p className="mt-3 text-sm text-amber-700">{uploadWarning}</p>}
       </div>
     );
   }
@@ -266,6 +295,7 @@ export function RequestQuoteForm({ photosEnabled }: { photosEnabled: boolean }) 
         </span>
       </label>
 
+      {uploadWarning && <p className="text-sm text-amber-700">{uploadWarning}</p>}
       {error && <p className="text-sm text-destructive">{error}</p>}
 
       <Button type="submit" disabled={submitting} className="w-full sm:w-auto">

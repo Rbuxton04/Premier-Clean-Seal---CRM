@@ -15,12 +15,20 @@ import { isSupabaseStorageConfigured, presignUpload } from "@/lib/storage/supaba
 // were never meant to accept public writes.
 const ALLOWED_FOLDERS = new Set(["uploads", "jobs"]);
 
+// Opt-in via mediaOnly: true -- the "uploads" folder is shared with the
+// staff documents page, which accepts any file type (PDFs, RAMS docs, ...),
+// so these limits must never apply there. Only the public enquiry form
+// (photos/videos) sets mediaOnly, matching its <input accept="image/*,
+// video/*"> restriction with a real server-side check.
+const MAX_IMAGE_BYTES = 15 * 1024 * 1024; // 15MB
+const MAX_VIDEO_BYTES = 100 * 1024 * 1024; // 100MB -- a short phone video
+
 export async function POST(req: Request) {
   if (!isSupabaseStorageConfigured()) {
     return NextResponse.json({ configured: false });
   }
 
-  let body: { filename?: string; contentType?: string; folder?: string };
+  let body: { filename?: string; contentType?: string; folder?: string; sizeBytes?: number; mediaOnly?: boolean };
   try {
     body = await req.json();
   } catch {
@@ -28,6 +36,20 @@ export async function POST(req: Request) {
   }
   if (!body.filename || !body.contentType) {
     return NextResponse.json({ ok: false, message: "filename and contentType are required." }, { status: 400 });
+  }
+
+  if (body.mediaOnly) {
+    const isImage = body.contentType.startsWith("image/");
+    const isVideo = body.contentType.startsWith("video/");
+    if (!isImage && !isVideo) {
+      return NextResponse.json({ ok: false, message: "Only image and video files are accepted." }, { status: 400 });
+    }
+
+    const maxBytes = isVideo ? MAX_VIDEO_BYTES : MAX_IMAGE_BYTES;
+    if (typeof body.sizeBytes === "number" && body.sizeBytes > maxBytes) {
+      const limitLabel = isVideo ? "100MB" : "15MB";
+      return NextResponse.json({ ok: false, message: `File is too large — max ${limitLabel} for a ${isVideo ? "video" : "photo"}.` }, { status: 400 });
+    }
   }
 
   const folder = body.folder && ALLOWED_FOLDERS.has(body.folder) ? body.folder : "uploads";

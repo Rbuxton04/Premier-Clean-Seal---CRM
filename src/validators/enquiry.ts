@@ -75,10 +75,14 @@ export const enquiryStageLabels: Record<(typeof enquiryStages)[number], string> 
 
 // Descriptor for a file already uploaded to Supabase Storage (or, until
 // storage is configured, this array is simply always empty — see
-// src/lib/storage/supabase.ts).
+// src/lib/storage/supabase.ts). url/thumbnailUrl are storage PATHS (e.g.
+// "uploads/1730-photo.jpg"), not full URLs -- the bucket is private, so
+// these are resolved to a signed, viewable URL later via getFileUrl(), same
+// as media.ts/completion.ts. A `.url()` check here would reject every real
+// upload.
 export const uploadedFileSchema = z.object({
-  url: z.string().url(),
-  thumbnailUrl: z.string().url().optional(),
+  url: z.string().min(1),
+  thumbnailUrl: z.string().min(1).optional(),
   mimeType: z.string(),
   sizeBytes: z.number().int().nonnegative().default(0),
   kind: z.enum(["PHOTO", "VIDEO"]),

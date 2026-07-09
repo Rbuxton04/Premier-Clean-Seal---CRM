@@ -13,6 +13,11 @@ const isPublicRoute = createRouteMatcher([
   "/api/cron/(.*)",
   "/api/portal/(.*)",
   "/portal/(.*)",
+  // Called unauthenticated by the public quote-request form (and by the
+  // Clerk-protected job completion wizard, which works fine either way) --
+  // see src/app/api/uploads/presign/route.ts. Its own folder allowlist is
+  // the real authorization boundary here, not Clerk.
+  "/api/uploads/presign",
 ]);
 
 const clerkEnabled = Boolean(process.env.NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY);

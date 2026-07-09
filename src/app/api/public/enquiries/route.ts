@@ -27,6 +27,7 @@ export async function POST(req: Request) {
 
   const parsed = publicEnquiryRequestSchema.safeParse(body);
   if (!parsed.success) {
+    console.error("Public enquiry validation failed", parsed.error.flatten());
     return NextResponse.json({ ok: false, message: "Please check the form and try again.", errors: parsed.error.flatten().fieldErrors }, { status: 400 });
   }
 
