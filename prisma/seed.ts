@@ -329,17 +329,35 @@ async function main() {
     console.log("Seeded sample quotes.");
   }
 
-  // Sample technicians (idempotent)
-  const existingTechnicians = await db.user.count({ where: { organisationId: org.id, roles: { has: "TECHNICIAN" } } });
-  if (existingTechnicians === 0) {
-    await db.user.createMany({
-      data: [
-        { organisationId: org.id, name: "Roman", email: "roman@premiercleanandseal.co.uk", role: "TECHNICIAN", roles: ["TECHNICIAN"] },
-        { organisationId: org.id, name: "Danny", email: "danny@premiercleanandseal.co.uk", role: "TECHNICIAN", roles: ["TECHNICIAN"] },
-        { organisationId: org.id, name: "Mia", email: "mia@premiercleanandseal.co.uk", role: "TECHNICIAN", roles: ["TECHNICIAN"] },
-      ],
+  // Sample technicians (idempotent -- upsert by email, never createMany,
+  // which throws P2002 on a unique-email clash against rows that already
+  // exist from an earlier seed run).
+  for (const tech of [
+    { name: "Roman", email: "roman@premiercleanandseal.co.uk" },
+    { name: "Danny", email: "danny@premiercleanandseal.co.uk" },
+    { name: "Mia", email: "mia@premiercleanandseal.co.uk" },
+  ]) {
+    await db.user.upsert({
+      where: { email: tech.email },
+      update: {},
+      create: { organisationId: org.id, name: tech.name, email: tech.email, role: "TECHNICIAN", roles: ["TECHNICIAN"] },
     });
-    console.log("Seeded sample technicians.");
+  }
+  console.log("Ensured sample technicians exist.");
+
+  // Backfill roles[] from the legacy role column for any user that predates
+  // the roles[] field (e.g. every row that existed before this deploy's
+  // `prisma db push` added the column -- it defaults new AND existing rows
+  // to an empty array, it does not copy from role). Idempotent: only
+  // touches rows where roles is still empty, so it never clobbers a roles[]
+  // an admin has since set via Staff & roles.
+  const unbackfilled = await db.user.findMany({
+    where: { organisationId: org.id, roles: { equals: [] } },
+    select: { id: true, role: true },
+  });
+  if (unbackfilled.length > 0) {
+    await Promise.all(unbackfilled.map((u) => db.user.update({ where: { id: u.id }, data: { roles: [u.role] } })));
+    console.log(`Backfilled roles[] for ${unbackfilled.length} user(s) from their legacy role.`);
   }
 
   // Owner/dev account safeguard (runs every seed, not just first-run): force
