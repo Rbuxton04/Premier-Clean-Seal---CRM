@@ -171,7 +171,16 @@ export function CalendarBoard({
             <p className="text-sm text-muted-foreground">No technicians yet — seed sample staff or add one via Settings.</p>
           ) : (
             <div className="grid gap-2" style={{ gridTemplateColumns: `140px repeat(${days.length}, minmax(140px, 1fr))` }}>
-              <div />
+              {/* Corner + technician-name cells are sticky to the left so they stay
+                  visible while the day columns scroll sideways on a phone. The
+                  -mr-2/pr-2 pair extends the sticky box across the grid's own
+                  gap-2 gutter (which sticky positioning otherwise leaves as a
+                  thin strip content can show through), while keeping the text
+                  in the same visual position. z-10 sits above scrolling cell
+                  content but below a dragged job block (z-50) and the drag
+                  overlay, so dragging in/out from under the sticky column still
+                  reads correctly. */}
+              <div className="sticky left-0 z-10 -mr-2 border-r bg-background pr-2" />
               {days.map((d) => {
                 const areaForecast = weather.areaForecastByDate[dateKey(d)];
                 return (
@@ -188,7 +197,9 @@ export function CalendarBoard({
 
               {technicians.map((tech) => (
                 <div key={tech.id} className="contents">
-                  <div className="flex items-center text-sm font-medium">{tech.name}</div>
+                  <div className="sticky left-0 z-10 -mr-2 flex items-center border-r bg-background pr-2 text-sm font-medium">
+                    {tech.name}
+                  </div>
                   {days.map((d) => {
                     const dayJobs = Object.values(jobs).filter(
                       (j) => j.technicianId === tech.id && j.scheduledStart && sameDay(j.scheduledStart, d)
