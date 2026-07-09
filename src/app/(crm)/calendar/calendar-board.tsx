@@ -160,13 +160,22 @@ export function CalendarBoard({
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
+      {/* min-w-0 on both grid items below is load-bearing: grid items default
+          to min-width:auto, which lets their content's intrinsic width
+          override overflow-x-auto and blow the whole grid out past this
+          container once available width gets tight -- at that point some
+          ancestor further up ends up scrolling instead of this div, which
+          breaks the sticky technician column's containing block. Without
+          min-w-0 here, the exact width this kicks in at depends on content
+          (job card text length), which is why it showed up as an "unsticks
+          below ~523px" symptom rather than a clean breakpoint. */}
       <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
-        <div>
+        <div className="min-w-0">
           <h3 className="mb-2 text-sm font-semibold">Unscheduled</h3>
           <Tray jobs={unscheduledJobs} />
         </div>
 
-        <div className="overflow-x-auto">
+        <div className="min-w-0 overflow-x-auto">
           {technicians.length === 0 ? (
             <p className="text-sm text-muted-foreground">No technicians yet — seed sample staff or add one via Settings.</p>
           ) : (
@@ -180,7 +189,7 @@ export function CalendarBoard({
                   content but below a dragged job block (z-50) and the drag
                   overlay, so dragging in/out from under the sticky column still
                   reads correctly. */}
-              <div className="sticky left-0 z-10 -mr-2 border-r bg-background pr-2" />
+              <div className="sticky left-0 z-10 -mr-2 min-w-[140px] flex-shrink-0 border-r bg-background pr-2" />
               {days.map((d) => {
                 const areaForecast = weather.areaForecastByDate[dateKey(d)];
                 return (
@@ -197,7 +206,7 @@ export function CalendarBoard({
 
               {technicians.map((tech) => (
                 <div key={tech.id} className="contents">
-                  <div className="sticky left-0 z-10 -mr-2 flex items-center border-r bg-background pr-2 text-sm font-medium">
+                  <div className="sticky left-0 z-10 -mr-2 flex min-w-[140px] flex-shrink-0 items-center border-r bg-background pr-2 text-sm font-medium">
                     {tech.name}
                   </div>
                   {days.map((d) => {
