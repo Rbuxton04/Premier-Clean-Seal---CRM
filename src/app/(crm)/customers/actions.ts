@@ -8,7 +8,9 @@ import { sendPortalLinkSchema } from "@/validators/portal";
 import * as CustomerService from "@/services/customer.service";
 import * as PropertyService from "@/services/property.service";
 import * as PortalService from "@/services/portal.service";
+import { requireAdmin, ForbiddenError } from "@/lib/permissions";
 import { writeAudit, actorContext } from "@/lib/audit";
+import type { RecordActionResult } from "@/components/record-action-button";
 
 export type FormState = { ok: boolean; message: string; errors?: Record<string, string> } | null;
 
@@ -81,9 +83,24 @@ export async function addPropertyAction(customerId: string, _prev: FormState, fo
   return { ok: true, message: "Property added" };
 }
 
-export async function deletePropertyAction(customerId: string, propertyId: string) {
-  await CustomerService.deleteProperty(propertyId);
-  revalidatePath(`/customers/${customerId}`);
+/**
+ * Admin-only, server-enforced soft-delete — a property's work-log/materials
+ * history is warranty-traceability data and is never touched here, only the
+ * property's own visibility. See CustomerService.softDeleteProperty.
+ */
+export async function deletePropertyAction(customerId: string, propertyId: string): Promise<RecordActionResult> {
+  try {
+    const actor = await requireAdmin();
+    await CustomerService.softDeleteProperty(propertyId, actor.id);
+    const { ip } = await actorContext();
+    await writeAudit({ userId: actor.id, action: "DELETE", resource: "property", resourceId: propertyId, ip });
+    revalidatePath(`/customers/${customerId}`);
+    revalidatePath("/customers");
+    return { ok: true, message: "Deleted" };
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, message: err.message };
+    throw err;
+  }
 }
 
 export async function addWorkLogAction(customerId: string, propertyId: string, _prev: FormState, formData: FormData): Promise<FormState> {

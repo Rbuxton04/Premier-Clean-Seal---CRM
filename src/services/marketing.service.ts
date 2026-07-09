@@ -78,7 +78,7 @@ export async function getRebookingCustomer(token: string): Promise<RebookingCust
 
   return db.customer.findFirst({
     where: { id: portalToken.customerId, deletedAt: null },
-    select: { id: true, name: true, properties: { select: { id: true, addressLine1: true, postcode: true } } },
+    select: { id: true, name: true, properties: { where: { deletedAt: null }, select: { id: true, addressLine1: true, postcode: true } } },
   });
 }
 
@@ -509,7 +509,7 @@ export async function createRebookingEnquiry(
   source = "marketing reminder"
 ): Promise<{ enquiryId: string }> {
   const customer = await db.customer.findUniqueOrThrow({ where: { id: customerId } });
-  const property = await db.property.findFirstOrThrow({ where: { id: data.propertyId, customerId } });
+  const property = await db.property.findFirstOrThrow({ where: { id: data.propertyId, customerId, deletedAt: null } });
 
   const kanbanOrder = await db.enquiry.count({ where: { organisationId: ORG_ID, stage: "NEW" } });
   const enquiry = await db.enquiry.create({

@@ -2,7 +2,7 @@
 
 import { RotateCcw } from "lucide-react";
 import { RecordActionButton } from "@/components/record-action-button";
-import { restoreJobAction, restoreQuoteAction, restoreInvoiceAction } from "./actions";
+import { restoreJobAction, restoreQuoteAction, restoreInvoiceAction, restorePropertyAction } from "./actions";
 
 // No confirmation dialog on restore — it's the reversible "undo" for an
 // accidental delete, so adding a second confirmation step just re-adds the
@@ -19,4 +19,8 @@ export function RestoreQuoteButton({ quoteId }: { quoteId: string }) {
 
 export function RestoreInvoiceButton({ invoiceId }: { invoiceId: string }) {
   return <RecordActionButton {...restoreProps} action={() => restoreInvoiceAction(invoiceId)} />;
+}
+
+export function RestorePropertyButton({ propertyId }: { propertyId: string }) {
+  return <RecordActionButton {...restoreProps} action={() => restorePropertyAction(propertyId)} />;
 }

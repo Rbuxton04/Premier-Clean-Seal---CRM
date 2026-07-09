@@ -180,6 +180,13 @@ model Property {
   latitude     Float?
   longitude    Float?
   createdAt    DateTime @default(now())
+  // Soft delete — mirrors Customer.deletedAt/Job.deletedAt. deletedById is a
+  // plain scalar (no relation), same convention as Job.deletedById. Deleting
+  // a property never cascades — jobs/enquiries/work-log history referencing
+  // it survive untouched, only its own visibility (lists/pickers/maps) is
+  // hidden. See src/services/customer.service.ts.
+  deletedAt      DateTime?
+  deletedById    String?
   jobs         Job[]
   enquiries    Enquiry[]
   workLogEntries PropertyWorkLog[]

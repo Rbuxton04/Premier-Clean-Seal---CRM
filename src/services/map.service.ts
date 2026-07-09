@@ -88,7 +88,7 @@ export type RegeocodeSummary = { checked: number; fixed: number; unresolved: num
  */
 export async function regeocodeBadProperties(): Promise<RegeocodeSummary> {
   const properties = await db.property.findMany({
-    where: { customer: { organisationId: ORG_ID, deletedAt: null } },
+    where: { customer: { organisationId: ORG_ID, deletedAt: null }, deletedAt: null },
     select: { id: true, addressLine1: true, city: true, postcode: true, latitude: true, longitude: true },
   });
 

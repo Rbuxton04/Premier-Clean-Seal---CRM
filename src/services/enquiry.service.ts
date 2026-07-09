@@ -216,7 +216,7 @@ async function findOrCreateProperty(
   propertyType: (typeof propertyTypes)[number]
 ) {
   const existing = await db.property.findFirst({
-    where: { customerId, postcode: { equals: postcode, mode: "insensitive" } },
+    where: { customerId, postcode: { equals: postcode, mode: "insensitive" }, deletedAt: null },
   });
   if (existing) return existing;
 

@@ -128,6 +128,7 @@ async function searchCustomers(filters: SearchFilters, sort: "newest" | "oldest"
   if (filters.postcodeStartsWith || propertyType) {
     where.properties = {
       some: {
+        deletedAt: null,
         ...(filters.postcodeStartsWith ? { postcode: { startsWith: filters.postcodeStartsWith, mode: "insensitive" } } : {}),
         ...(propertyType ? { propertyType: propertyType as PropertyType } : {}),
       },
@@ -152,7 +153,7 @@ async function searchCustomers(filters: SearchFilters, sort: "newest" | "oldest"
 
   const rows = await db.customer.findMany({
     where,
-    include: { tags: { select: { id: true, name: true, colour: true } }, _count: { select: { jobs: true, properties: true } } },
+    include: { tags: { select: { id: true, name: true, colour: true } }, _count: { select: { jobs: true, properties: { where: { deletedAt: null } } } } },
     orderBy: { createdAt: sort === "oldest" ? "asc" : "desc" },
     take: limit,
   });
@@ -172,7 +173,7 @@ export type PropertySearchResult = {
 };
 
 async function searchProperties(filters: SearchFilters, sort: "newest" | "oldest" | undefined, limit: number): Promise<PropertySearchResult[]> {
-  const where: Prisma.PropertyWhereInput = { customer: { organisationId: ORG_ID, deletedAt: null } };
+  const where: Prisma.PropertyWhereInput = { customer: { organisationId: ORG_ID, deletedAt: null }, deletedAt: null };
 
   const propertyType = normalizeEnum(filters.propertyType, propertyTypes);
   if (propertyType) where.propertyType = propertyType as PropertyType;

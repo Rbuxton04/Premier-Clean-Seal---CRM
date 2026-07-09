@@ -70,7 +70,7 @@ export async function listCustomers(query?: string, tagIds?: string[]): Promise<
     },
     include: {
       tags: true,
-      _count: { select: { properties: true, jobs: true } },
+      _count: { select: { properties: { where: { deletedAt: null } }, jobs: true } },
     },
     orderBy: { createdAt: "desc" },
   });
@@ -82,6 +82,7 @@ export async function getCustomer(id: string): Promise<CustomerWithDetail | null
     where: { id, organisationId: ORG_ID, deletedAt: null },
     include: {
       properties: {
+        where: { deletedAt: null },
         orderBy: { createdAt: "asc" },
         include: { workLogEntries: { orderBy: { completedAt: "desc" }, include: { photos: true } } },
       },
@@ -150,6 +151,31 @@ export async function addProperty(customerId: string, data: PropertyInput) {
   return property;
 }
 
-export async function deleteProperty(id: string) {
-  return db.property.delete({ where: { id } });
+/**
+ * Soft-delete: hides the property everywhere (it stops matching every
+ * deletedAt: null query above) without touching its work-log entries,
+ * materials history, or any job/enquiry that references it — none of which
+ * cascade. Callers are responsible for the admin-only check; this function
+ * trusts its caller, same convention as JobService.softDeleteJob.
+ */
+export async function softDeleteProperty(id: string, userId: string | null): Promise<void> {
+  const property = await db.property.update({
+    where: { id },
+    data: { deletedAt: new Date(), deletedById: userId },
+  });
+  const actor = userId ? await db.user.findUnique({ where: { id: userId }, select: { name: true } }) : null;
+  await db.timelineEvent.create({
+    data: {
+      customerId: property.customerId,
+      type: "PROPERTY_DELETED",
+      title: `Property deleted: ${property.addressLine1}, ${property.postcode}${actor ? ` by ${actor.name}` : ""}`,
+    },
+  });
+}
+
+export async function restoreProperty(id: string): Promise<void> {
+  const property = await db.property.update({ where: { id }, data: { deletedAt: null, deletedById: null } });
+  await db.timelineEvent.create({
+    data: { customerId: property.customerId, type: "PROPERTY_RESTORED", title: `Property restored: ${property.addressLine1}, ${property.postcode}` },
+  });
 }

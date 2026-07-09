@@ -85,7 +85,7 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
               {
                 id: "properties",
                 label: `Properties (${customer.properties.length})`,
-                content: <PropertiesPanel customerId={customer.id} properties={customer.properties as any} products={products} />,
+                content: <PropertiesPanel customerId={customer.id} properties={customer.properties as any} products={products} isAdmin={isAdmin} />,
               },
               {
                 id: "tags",

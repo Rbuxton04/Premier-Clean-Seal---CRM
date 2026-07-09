@@ -1,10 +1,8 @@
 "use client";
 
-import { Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
 import { PropertyForm } from "../property-form";
-import { deletePropertyAction } from "../actions";
+import { DeletePropertyButton } from "./delete-property-button";
 import { propertyTypeLabels } from "@/validators/customer";
 import { WorkLogPanel, type WorkLogEntry, type ProductOption } from "./work-log-panel";
 
@@ -14,7 +12,17 @@ type Property = {
   workLogEntries: WorkLogEntry[];
 };
 
-export function PropertiesPanel({ customerId, properties, products }: { customerId: string; properties: Property[]; products: ProductOption[] }) {
+export function PropertiesPanel({
+  customerId,
+  properties,
+  products,
+  isAdmin,
+}: {
+  customerId: string;
+  properties: Property[];
+  products: ProductOption[];
+  isAdmin: boolean;
+}) {
   return (
     <div className="space-y-4">
       {properties.length === 0 ? (
@@ -29,11 +37,13 @@ export function PropertiesPanel({ customerId, properties, products }: { customer
                   <p className="text-xs text-muted-foreground">{[p.city, p.postcode].filter(Boolean).join(", ")}</p>
                   <Badge variant="secondary" className="mt-1">{propertyTypeLabels[p.propertyType]}</Badge>
                 </div>
-                <form action={deletePropertyAction.bind(null, customerId, p.id)}>
-                  <Button variant="ghost" size="icon" type="submit" aria-label="Delete property">
-                    <Trash2 className="h-4 w-4 text-muted-foreground" />
-                  </Button>
-                </form>
+                {isAdmin && (
+                  <DeletePropertyButton
+                    customerId={customerId}
+                    propertyId={p.id}
+                    address={`${p.addressLine1}, ${p.postcode}`}
+                  />
+                )}
               </div>
               <WorkLogPanel customerId={customerId} propertyId={p.id} entries={p.workLogEntries} products={products} />
             </li>

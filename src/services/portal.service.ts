@@ -109,7 +109,7 @@ export async function getPortalHome(customerId: string): Promise<PortalHome> {
     }),
     listDocuments({ customerId }),
     getSharedPhotoPairs(customerId),
-    db.property.findMany({ where: { customerId }, select: { id: true, addressLine1: true, postcode: true }, orderBy: { createdAt: "asc" } }),
+    db.property.findMany({ where: { customerId, deletedAt: null }, select: { id: true, addressLine1: true, postcode: true }, orderBy: { createdAt: "asc" } }),
   ]);
 
   const quoteDetails = (await Promise.all(awaitingIds.map((q) => getQuote(q.id)))).filter((q): q is QuoteDetail => q !== null);

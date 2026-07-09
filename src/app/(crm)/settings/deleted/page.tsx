@@ -6,7 +6,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { getCurrentUser } from "@/lib/auth";
 import { hasRole } from "@/lib/permissions";
 import { listDeletedItems, type DeletedItems } from "@/services/deleted-items.service";
-import { RestoreJobButton, RestoreQuoteButton, RestoreInvoiceButton } from "./restore-buttons";
+import { RestoreJobButton, RestoreQuoteButton, RestoreInvoiceButton, RestorePropertyButton } from "./restore-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ async function loadDeletedItems(): Promise<{ items: DeletedItems; dbOnline: bool
   try {
     return { items: await listDeletedItems(), dbOnline: true };
   } catch {
-    return { items: { jobs: [], quotes: [], invoices: [] }, dbOnline: false };
+    return { items: { jobs: [], quotes: [], invoices: [], properties: [] }, dbOnline: false };
   }
 }
 
@@ -34,7 +34,7 @@ export default async function DeletedItemsPage() {
         <h1 className="font-display text-2xl font-semibold tracking-tight">Deleted items</h1>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
         <p className="mt-2 text-sm text-muted-foreground">
-          Soft-deleted jobs, quotes, and invoices — hidden everywhere else, but recoverable here.
+          Soft-deleted jobs, quotes, invoices, and properties — hidden everywhere else, but recoverable here.
         </p>
       </div>
 
@@ -58,9 +58,10 @@ async function DeletedItemsContent() {
     );
   }
 
-  const isEmpty = items.jobs.length === 0 && items.quotes.length === 0 && items.invoices.length === 0;
+  const isEmpty =
+    items.jobs.length === 0 && items.quotes.length === 0 && items.invoices.length === 0 && items.properties.length === 0;
   if (isEmpty) {
-    return <p className="text-sm text-muted-foreground">Nothing deleted — deleted jobs, quotes, and invoices will show up here.</p>;
+    return <p className="text-sm text-muted-foreground">Nothing deleted — deleted jobs, quotes, invoices, and properties will show up here.</p>;
   }
 
   return (
@@ -142,6 +143,36 @@ async function DeletedItemsContent() {
                   <TableCell>{i.deletedByName ?? "—"}</TableCell>
                   <TableCell>{formatDeletedAt(i.deletedAt)}</TableCell>
                   <TableCell><RestoreInvoiceButton invoiceId={i.id} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+      )}
+
+      {items.properties.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold">Properties</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Address</TableHead>
+                <TableHead>Customer</TableHead>
+                <TableHead>Deleted by</TableHead>
+                <TableHead>Deleted at</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.properties.map((p) => (
+                <TableRow key={p.id}>
+                  <TableCell className="font-medium">{p.address}</TableCell>
+                  <TableCell>
+                    <Link href={`/customers/${p.customerId}`} className="text-primary hover:underline">{p.customerName}</Link>
+                  </TableCell>
+                  <TableCell>{p.deletedByName ?? "—"}</TableCell>
+                  <TableCell>{formatDeletedAt(p.deletedAt)}</TableCell>
+                  <TableCell><RestorePropertyButton propertyId={p.id} /></TableCell>
                 </TableRow>
               ))}
             </TableBody>

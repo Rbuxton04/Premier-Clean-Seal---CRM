@@ -135,7 +135,7 @@ export async function listTechnicians(): Promise<TechnicianOption[]> {
 export async function listCustomersForJobPicker(): Promise<CustomerForJobPicker[]> {
   return db.customer.findMany({
     where: { organisationId: ORG_ID, deletedAt: null },
-    select: { id: true, name: true, company: true, properties: { select: { id: true, addressLine1: true, postcode: true } } },
+    select: { id: true, name: true, company: true, properties: { where: { deletedAt: null }, select: { id: true, addressLine1: true, postcode: true } } },
     orderBy: { name: "asc" },
   });
 }
