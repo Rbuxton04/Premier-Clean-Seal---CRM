@@ -23,6 +23,7 @@ export function RecordActionButton({
   variant = "outline",
   size = "sm",
   icon,
+  fullWidth = false,
 }: {
   label: string;
   pendingLabel?: string;
@@ -34,6 +35,7 @@ export function RecordActionButton({
   variant?: ButtonProps["variant"];
   size?: ButtonProps["size"];
   icon?: React.ReactNode;
+  fullWidth?: boolean;
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -54,8 +56,15 @@ export function RecordActionButton({
   }
 
   return (
-    <div className="inline-flex flex-col items-start gap-1">
-      <Button type="button" variant={variant} size={size} disabled={pending} onClick={handleClick}>
+    <div className={fullWidth ? "flex w-full flex-col items-start gap-1" : "inline-flex flex-col items-start gap-1"}>
+      <Button
+        type="button"
+        variant={variant}
+        size={size}
+        disabled={pending}
+        onClick={handleClick}
+        className={fullWidth ? "w-full" : undefined}
+      >
         {pending ? <Loader2 className="h-3.5 w-3.5 animate-spin" /> : icon}
         {pending ? pendingLabel ?? "Working…" : label}
       </Button>

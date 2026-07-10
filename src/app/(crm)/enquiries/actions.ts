@@ -6,6 +6,7 @@ import { aiAnalysisFieldsSchema } from "@/validators/ai-analysis";
 import * as EnquiryService from "@/services/enquiry.service";
 import * as AiService from "@/services/ai.service";
 import type { RunAnalysisResult } from "@/services/ai.service";
+import type { RecordActionResult } from "@/components/record-action-button";
 
 export async function moveEnquiryAction(id: string, stage: string, index: number) {
   if (!(enquiryStages as readonly string[]).includes(stage)) throw new Error("Invalid stage");
@@ -45,18 +46,28 @@ export async function updateEnquiryFieldsAction(id: string, _prev: FieldsFormSta
   return { ok: true, message: "Saved" };
 }
 
-export async function linkToCustomerAction(enquiryId: string, customerId: string) {
-  await EnquiryService.convertToExistingCustomer(enquiryId, customerId);
-  revalidatePath(`/enquiries/${enquiryId}`);
-  revalidatePath("/enquiries");
-  revalidatePath("/customers");
+export async function linkToCustomerAction(enquiryId: string, customerId: string): Promise<RecordActionResult> {
+  try {
+    const result = await EnquiryService.convertToExistingCustomer(enquiryId, customerId);
+    revalidatePath(`/enquiries/${enquiryId}`);
+    revalidatePath("/enquiries");
+    revalidatePath("/customers");
+    return { ok: true, message: result.alreadyConverted ? "Already linked to a customer" : "Linked to customer" };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Failed to link enquiry to customer" };
+  }
 }
 
-export async function createCustomerFromEnquiryAction(enquiryId: string) {
-  await EnquiryService.convertToNewCustomer(enquiryId);
-  revalidatePath(`/enquiries/${enquiryId}`);
-  revalidatePath("/enquiries");
-  revalidatePath("/customers");
+export async function createCustomerFromEnquiryAction(enquiryId: string): Promise<RecordActionResult> {
+  try {
+    const result = await EnquiryService.convertToNewCustomer(enquiryId);
+    revalidatePath(`/enquiries/${enquiryId}`);
+    revalidatePath("/enquiries");
+    revalidatePath("/customers");
+    return { ok: true, message: result.alreadyConverted ? "Already converted to a customer" : "Customer created" };
+  } catch (e) {
+    return { ok: false, message: e instanceof Error ? e.message : "Failed to convert enquiry" };
+  }
 }
 
 export async function runAiAnalysisAction(enquiryId: string): Promise<RunAnalysisResult> {

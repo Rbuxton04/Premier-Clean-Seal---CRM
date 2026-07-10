@@ -1,4 +1,5 @@
 import { db } from "@/lib/db";
+import { Prisma } from "@prisma/client";
 import { ORG_ID } from "@/lib/settings";
 import { getFileUrl } from "@/lib/storage/supabase";
 import { enquiryStageLabels, enquiryStages, type EnquiryFieldsInput, type PublicEnquiryInput } from "@/validators/enquiry";
@@ -210,59 +211,86 @@ export async function findMatchingCustomers(email: string, phone: string): Promi
 }
 
 async function findOrCreateProperty(
+  tx: Prisma.TransactionClient,
   customerId: string,
   addressText: string,
   postcode: string,
   propertyType: (typeof propertyTypes)[number]
 ) {
-  const existing = await db.property.findFirst({
+  const existing = await tx.property.findFirst({
     where: { customerId, postcode: { equals: postcode, mode: "insensitive" }, deletedAt: null },
   });
   if (existing) return existing;
 
-  const property = await db.property.create({
+  const property = await tx.property.create({
     data: { customerId, addressLine1: addressText, postcode, propertyType },
   });
-  await db.timelineEvent.create({
+  await tx.timelineEvent.create({
     data: { customerId, type: "PROPERTY_ADDED", title: `Property added: ${addressText}, ${postcode}` },
   });
   return property;
 }
 
-export async function convertToNewCustomer(enquiryId: string): Promise<{ customerId: string }> {
-  const enquiry = await db.enquiry.findUniqueOrThrow({ where: { id: enquiryId } });
-
-  const customer = await db.customer.create({
-    data: {
-      organisationId: ORG_ID,
-      name: enquiry.name,
-      company: enquiry.company,
-      phone: enquiry.phone,
-      email: enquiry.email,
-    },
-  });
-  await db.timelineEvent.create({
-    data: { customerId: customer.id, type: "CUSTOMER_CREATED", title: "Customer record created (converted from enquiry)" },
-  });
-
-  const property = await findOrCreateProperty(customer.id, enquiry.addressText, enquiry.postcode, enquiry.propertyType);
-
-  await db.enquiry.update({ where: { id: enquiryId }, data: { customerId: customer.id, propertyId: property.id } });
-
-  return { customerId: customer.id };
+/**
+ * Locks the enquiry row for the rest of the enclosing transaction, so a
+ * second convert/link call that lands while the first is still running
+ * (double-click, slow connection) blocks on this SELECT until the first
+ * commits, then sees customerId already set instead of racing it and
+ * creating a second customer.
+ */
+async function lockEnquiryForConvert(tx: Prisma.TransactionClient, enquiryId: string) {
+  const rows = await tx.$queryRaw<{ id: string; customerId: string | null }[]>`
+    SELECT id, "customerId" FROM "Enquiry" WHERE id = ${enquiryId} FOR UPDATE
+  `;
+  return rows[0] ?? null;
 }
 
-export async function convertToExistingCustomer(enquiryId: string, customerId: string): Promise<{ customerId: string }> {
-  const enquiry = await db.enquiry.findUniqueOrThrow({ where: { id: enquiryId } });
+export async function convertToNewCustomer(enquiryId: string): Promise<{ customerId: string; alreadyConverted: boolean }> {
+  return db.$transaction(async (tx) => {
+    const locked = await lockEnquiryForConvert(tx, enquiryId);
+    if (!locked) throw new Error("Enquiry not found");
+    if (locked.customerId) return { customerId: locked.customerId, alreadyConverted: true };
 
-  const property = await findOrCreateProperty(customerId, enquiry.addressText, enquiry.postcode, enquiry.propertyType);
+    const enquiry = await tx.enquiry.findUniqueOrThrow({ where: { id: enquiryId } });
 
-  await db.enquiry.update({ where: { id: enquiryId }, data: { customerId, propertyId: property.id } });
-  await db.timelineEvent.create({
-    data: { customerId, type: "ENQUIRY_LINKED", title: `Enquiry linked: ${enquiry.description.slice(0, 80)}` },
+    const customer = await tx.customer.create({
+      data: {
+        organisationId: ORG_ID,
+        name: enquiry.name,
+        company: enquiry.company,
+        phone: enquiry.phone,
+        email: enquiry.email,
+      },
+    });
+    await tx.timelineEvent.create({
+      data: { customerId: customer.id, type: "CUSTOMER_CREATED", title: "Customer record created (converted from enquiry)" },
+    });
+
+    const property = await findOrCreateProperty(tx, customer.id, enquiry.addressText, enquiry.postcode, enquiry.propertyType);
+
+    await tx.enquiry.update({ where: { id: enquiryId }, data: { customerId: customer.id, propertyId: property.id } });
+
+    return { customerId: customer.id, alreadyConverted: false };
   });
+}
 
-  return { customerId };
+export async function convertToExistingCustomer(enquiryId: string, customerId: string): Promise<{ customerId: string; alreadyConverted: boolean }> {
+  return db.$transaction(async (tx) => {
+    const locked = await lockEnquiryForConvert(tx, enquiryId);
+    if (!locked) throw new Error("Enquiry not found");
+    if (locked.customerId) return { customerId: locked.customerId, alreadyConverted: true };
+
+    const enquiry = await tx.enquiry.findUniqueOrThrow({ where: { id: enquiryId } });
+
+    const property = await findOrCreateProperty(tx, customerId, enquiry.addressText, enquiry.postcode, enquiry.propertyType);
+
+    await tx.enquiry.update({ where: { id: enquiryId }, data: { customerId, propertyId: property.id } });
+    await tx.timelineEvent.create({
+      data: { customerId, type: "ENQUIRY_LINKED", title: `Enquiry linked: ${enquiry.description.slice(0, 80)}` },
+    });
+
+    return { customerId, alreadyConverted: false };
+  });
 }
 
 export async function listAssigneeOptions(): Promise<AssigneeOption[]> {

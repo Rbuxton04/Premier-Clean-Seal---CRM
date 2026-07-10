@@ -16,7 +16,7 @@ import { MediaLightbox } from "./media-lightbox";
 import { EnquiryFieldsForm } from "./enquiry-fields-form";
 import { AiAnalysisPanel } from "./ai-analysis-panel";
 import type { Findings } from "@/lib/ai/provider";
-import { linkToCustomerAction, createCustomerFromEnquiryAction } from "../actions";
+import { LinkToCustomerButton, ConvertToCustomerButton } from "./enquiry-convert-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -159,18 +159,15 @@ export default async function EnquiryDetailPage({ params }: { params: { id: stri
                             <p className="truncate text-sm font-medium">{c.name}</p>
                             <p className="truncate text-xs text-muted-foreground">{c.email ?? c.phone}</p>
                           </div>
-                          <form action={linkToCustomerAction.bind(null, enquiry.id, c.id)}>
-                            <Button type="submit" size="sm" variant="outline">Link</Button>
-                          </form>
+                          <LinkToCustomerButton enquiryId={enquiry.id} customerId={c.id} />
                         </div>
                       ))}
                     </div>
                   )}
-                  <form action={createCustomerFromEnquiryAction.bind(null, enquiry.id)}>
-                    <Button type="submit" size="sm" className="w-full">
-                      {matchingCustomers.length > 0 ? "Create new customer instead" : "Convert to customer"}
-                    </Button>
-                  </form>
+                  <ConvertToCustomerButton
+                    enquiryId={enquiry.id}
+                    label={matchingCustomers.length > 0 ? "Create new customer instead" : "Convert to customer"}
+                  />
                 </>
               )}
             </CardContent>
