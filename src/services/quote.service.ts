@@ -73,7 +73,7 @@ const detailInclude = {
 
 export async function listQuotes(status?: string): Promise<QuoteListItem[]> {
   const rows = await db.quote.findMany({
-    where: { organisationId: ORG_ID, deletedAt: null, ...(status ? { status: status as QuoteStatus } : {}) },
+    where: { organisationId: ORG_ID, deletedAt: null, customer: { deletedAt: null }, ...(status ? { status: status as QuoteStatus } : {}) },
     include: { customer: { select: { id: true, name: true, company: true } } },
     orderBy: { createdAt: "desc" },
   });
@@ -81,12 +81,12 @@ export async function listQuotes(status?: string): Promise<QuoteListItem[]> {
 }
 
 export async function getQuote(id: string): Promise<QuoteDetail | null> {
-  const row = await db.quote.findFirst({ where: { id, organisationId: ORG_ID, deletedAt: null }, include: detailInclude });
+  const row = await db.quote.findFirst({ where: { id, organisationId: ORG_ID, deletedAt: null, customer: { deletedAt: null } }, include: detailInclude });
   return row as QuoteDetail | null;
 }
 
 export async function getQuoteByToken(token: string): Promise<QuoteDetail | null> {
-  const row = await db.quote.findFirst({ where: { approvalToken: token, deletedAt: null }, include: detailInclude });
+  const row = await db.quote.findFirst({ where: { approvalToken: token, deletedAt: null, customer: { deletedAt: null } }, include: detailInclude });
   return row as QuoteDetail | null;
 }
 

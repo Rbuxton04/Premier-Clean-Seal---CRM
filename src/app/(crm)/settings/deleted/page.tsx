@@ -6,7 +6,7 @@ import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@
 import { getCurrentUser } from "@/lib/auth";
 import { hasRole } from "@/lib/permissions";
 import { listDeletedItems, type DeletedItems } from "@/services/deleted-items.service";
-import { RestoreJobButton, RestoreQuoteButton, RestoreInvoiceButton, RestorePropertyButton } from "./restore-buttons";
+import { RestoreJobButton, RestoreQuoteButton, RestoreInvoiceButton, RestorePropertyButton, RestoreCustomerButton } from "./restore-buttons";
 
 export const dynamic = "force-dynamic";
 
@@ -14,7 +14,7 @@ async function loadDeletedItems(): Promise<{ items: DeletedItems; dbOnline: bool
   try {
     return { items: await listDeletedItems(), dbOnline: true };
   } catch {
-    return { items: { jobs: [], quotes: [], invoices: [], properties: [] }, dbOnline: false };
+    return { items: { jobs: [], quotes: [], invoices: [], properties: [], customers: [] }, dbOnline: false };
   }
 }
 
@@ -34,7 +34,7 @@ export default async function DeletedItemsPage() {
         <h1 className="font-display text-2xl font-semibold tracking-tight">Deleted items</h1>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
         <p className="mt-2 text-sm text-muted-foreground">
-          Soft-deleted jobs, quotes, invoices, and properties — hidden everywhere else, but recoverable here.
+          Soft-deleted customers, jobs, quotes, invoices, and properties — hidden everywhere else, but recoverable here.
         </p>
       </div>
 
@@ -59,13 +59,42 @@ async function DeletedItemsContent() {
   }
 
   const isEmpty =
-    items.jobs.length === 0 && items.quotes.length === 0 && items.invoices.length === 0 && items.properties.length === 0;
+    items.jobs.length === 0 && items.quotes.length === 0 && items.invoices.length === 0 &&
+    items.properties.length === 0 && items.customers.length === 0;
   if (isEmpty) {
-    return <p className="text-sm text-muted-foreground">Nothing deleted — deleted jobs, quotes, invoices, and properties will show up here.</p>;
+    return <p className="text-sm text-muted-foreground">Nothing deleted — deleted customers, jobs, quotes, invoices, and properties will show up here.</p>;
   }
 
   return (
     <div className="space-y-8">
+      {items.customers.length > 0 && (
+        <section className="space-y-2">
+          <h2 className="text-sm font-semibold">Customers</h2>
+          <Table>
+            <TableHeader>
+              <TableRow>
+                <TableHead>Name</TableHead>
+                <TableHead>Company</TableHead>
+                <TableHead>Deleted by</TableHead>
+                <TableHead>Deleted at</TableHead>
+                <TableHead />
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {items.customers.map((c) => (
+                <TableRow key={c.id}>
+                  <TableCell className="font-medium">{c.name}</TableCell>
+                  <TableCell>{c.company ?? "—"}</TableCell>
+                  <TableCell>{c.deletedByName ?? "—"}</TableCell>
+                  <TableCell>{formatDeletedAt(c.deletedAt)}</TableCell>
+                  <TableCell><RestoreCustomerButton customerId={c.id} /></TableCell>
+                </TableRow>
+              ))}
+            </TableBody>
+          </Table>
+        </section>
+      )}
+
       {items.jobs.length > 0 && (
         <section className="space-y-2">
           <h2 className="text-sm font-semibold">Jobs</h2>

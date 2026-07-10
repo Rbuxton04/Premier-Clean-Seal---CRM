@@ -131,8 +131,29 @@ export async function updateCustomer(id: string, data: CustomerInput) {
   });
 }
 
-export async function softDeleteCustomer(id: string) {
-  return db.customer.update({ where: { id }, data: { deletedAt: new Date() } });
+/**
+ * Soft-delete: hides the customer everywhere (every deletedAt: null query
+ * above, plus the job/quote/invoice/calendar/map/search/gallery queries that
+ * filter on customer.deletedAt) without touching their properties, jobs,
+ * quotes, invoices, or warranties, none of which cascade. Any still-scheduled
+ * marketing reminder is cancelled immediately, rather than waiting for the
+ * daily send job to discover the customer is gone, so a deleted customer can
+ * never be marketed to in the meantime. Callers are responsible for the
+ * admin-only check; this function trusts its caller, same convention as
+ * JobService.softDeleteJob.
+ */
+export async function softDeleteCustomer(id: string, userId: string | null): Promise<void> {
+  await db.customer.update({ where: { id }, data: { deletedAt: new Date(), deletedById: userId } });
+  await db.marketingReminder.updateMany({ where: { customerId: id, status: "SCHEDULED" }, data: { status: "CANCELLED" } });
+  const actor = userId ? await db.user.findUnique({ where: { id: userId }, select: { name: true } }) : null;
+  await db.timelineEvent.create({
+    data: { customerId: id, type: "CUSTOMER_DELETED", title: `Customer deleted${actor ? ` by ${actor.name}` : ""}` },
+  });
+}
+
+export async function restoreCustomer(id: string): Promise<void> {
+  await db.customer.update({ where: { id }, data: { deletedAt: null, deletedById: null } });
+  await db.timelineEvent.create({ data: { customerId: id, type: "CUSTOMER_RESTORED", title: "Customer restored" } });
 }
 
 /** Consent centre toggle — opt-out takes effect immediately (no confirmation delay). */

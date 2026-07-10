@@ -31,6 +31,7 @@ export async function listAlbums(customerId?: string, query?: string): Promise<A
     where: {
       organisationId: ORG_ID,
       deletedAt: null,
+      customer: { deletedAt: null },
       files: { some: { kind: { in: ["PHOTO", "VIDEO"] } } },
       ...(customerId ? { customerId } : {}),
       ...(query

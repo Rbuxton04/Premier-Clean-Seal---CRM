@@ -26,12 +26,16 @@ export async function eraseCustomerAction(customerId: string, _prev: EraseFormSt
     const result = await eraseCustomer(customerId);
     if (!result.ok) return { ok: false, message: result.message };
 
+    // Deliberately no `before`/`after` payload here -- the whole point of an
+    // erase is that the customer's personal data stops existing anywhere in
+    // the system, and AuditLog is not itself subject to the retention this
+    // action is trying to escape. Only the fact that an erase happened, by
+    // whom, and when is recorded.
     await writeAudit({
       userId: actor.id,
       action: "ERASE",
       resource: "customer.gdpr",
       resourceId: customerId,
-      before: { name: customer.name, email: customer.email, phone: customer.phone },
       ip: headers().get("x-forwarded-for")?.split(",")[0]?.trim() ?? null,
     });
 

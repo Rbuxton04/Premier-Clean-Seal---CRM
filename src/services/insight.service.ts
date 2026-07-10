@@ -71,7 +71,7 @@ export async function getQuickStats(): Promise<QuickStats> {
   const [dueFollowUpCount, approachingHealthy] = await Promise.all([
     db.marketingReminder.count({ where: { organisationId: ORG_ID, status: "SCHEDULED", dueDate: { lte: new Date() } } }),
     db.jobHealthScore.findMany({
-      where: { band: "YELLOW", job: { organisationId: ORG_ID, satisfactionRating: { gte: 4 } } },
+      where: { band: "YELLOW", job: { organisationId: ORG_ID, satisfactionRating: { gte: 4 }, customer: { deletedAt: null } } },
       select: { jobId: true },
     }),
   ]);

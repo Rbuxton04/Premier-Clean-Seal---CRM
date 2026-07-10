@@ -21,6 +21,7 @@ import { CustomerGalleryPanel } from "./gallery-panel";
 import { CustomerDocumentsPanel } from "./documents-panel";
 import { PortalPanel } from "./portal-panel";
 import { GdprPanel } from "./gdpr-panel";
+import { DeleteCustomerButton } from "../delete-customer-button";
 
 export const dynamic = "force-dynamic";
 
@@ -48,14 +49,17 @@ export default async function CustomerProfilePage({ params }: { params: { id: st
         <Link href="/customers" className="mb-3 inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground">
           <ArrowLeft className="h-4 w-4" /> Back to customers
         </Link>
-        <div className="flex flex-wrap items-center gap-3">
-          <h1 className="font-display text-2xl font-semibold tracking-tight">{customer.name}</h1>
-          {customer.company && <Badge variant="secondary"><Building2 className="mr-1 h-3 w-3" />{customer.company}</Badge>}
-          {customer.tags.map((t) => (
-            <span key={t.id} className="rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: t.colour }}>{t.name}</span>
-          ))}
-          {customer.marketingEmail && <Badge variant="secondary">Email opt-in</Badge>}
-          {customer.marketingSms && <Badge variant="secondary">SMS opt-in</Badge>}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-3">
+            <h1 className="font-display text-2xl font-semibold tracking-tight">{customer.name}</h1>
+            {customer.company && <Badge variant="secondary"><Building2 className="mr-1 h-3 w-3" />{customer.company}</Badge>}
+            {customer.tags.map((t) => (
+              <span key={t.id} className="rounded-full px-2.5 py-0.5 text-xs font-medium text-white" style={{ backgroundColor: t.colour }}>{t.name}</span>
+            ))}
+            {customer.marketingEmail && <Badge variant="secondary">Email opt-in</Badge>}
+            {customer.marketingSms && <Badge variant="secondary">SMS opt-in</Badge>}
+          </div>
+          {isAdmin && <DeleteCustomerButton customerId={customer.id} customerName={customer.name} redirectTo="/customers" />}
         </div>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
         <div className="mt-2 flex flex-wrap gap-4 text-sm text-muted-foreground">

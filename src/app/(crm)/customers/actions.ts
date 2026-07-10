@@ -103,6 +103,39 @@ export async function deletePropertyAction(customerId: string, propertyId: strin
   }
 }
 
+/**
+ * Admin-only, server-enforced soft-delete — hides the customer and, via the
+ * customer.deletedAt filters on their queries, their jobs/quotes/invoices
+ * from every normal list, calendar, map, search, and gallery view. None of
+ * those related records are touched or destroyed; everything reappears on
+ * restore. See CustomerService.softDeleteCustomer.
+ */
+export async function deleteCustomerAction(id: string): Promise<RecordActionResult> {
+  try {
+    const actor = await requireAdmin();
+    const customer = await CustomerService.getCustomer(id);
+    if (!customer) return { ok: false, message: "Customer not found." };
+
+    await CustomerService.softDeleteCustomer(id, actor.id);
+    const { ip } = await actorContext();
+    await writeAudit({ userId: actor.id, action: "DELETE", resource: "customer", resourceId: id, before: { name: customer.name }, ip });
+    revalidatePath("/customers");
+    revalidatePath("/jobs");
+    revalidatePath("/quotes");
+    revalidatePath("/invoices");
+    revalidatePath("/calendar");
+    revalidatePath("/map");
+    revalidatePath("/search");
+    revalidatePath("/gallery");
+    revalidatePath("/dashboard");
+    revalidatePath("/settings/deleted");
+    return { ok: true, message: "Deleted" };
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, message: err.message };
+    throw err;
+  }
+}
+
 export async function addWorkLogAction(customerId: string, propertyId: string, _prev: FormState, formData: FormData): Promise<FormState> {
   const parsed = workLogSchema.safeParse({
     description: formData.get("description"),

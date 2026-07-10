@@ -7,12 +7,14 @@ export type DeletedJobItem = { id: string; jobNumber: string; customerName: stri
 export type DeletedQuoteItem = { id: string; quoteNumber: string; customerName: string; deletedAt: Date; deletedByName: string | null };
 export type DeletedInvoiceItem = { id: string; invoiceNumber: string; customerName: string; deletedAt: Date; deletedByName: string | null };
 export type DeletedPropertyItem = { id: string; address: string; customerId: string; customerName: string; deletedAt: Date; deletedByName: string | null };
+export type DeletedCustomerItem = { id: string; name: string; company: string | null; deletedAt: Date; deletedByName: string | null };
 
 export type DeletedItems = {
   jobs: DeletedJobItem[];
   quotes: DeletedQuoteItem[];
   invoices: DeletedInvoiceItem[];
   properties: DeletedPropertyItem[];
+  customers: DeletedCustomerItem[];
 };
 
 /** deletedById is a plain scalar (no relation — see the schema comment on Job.deletedById), so names are resolved with a single follow-up lookup. */
@@ -25,7 +27,7 @@ async function resolveDeletedByNames(ids: Array<string | null>): Promise<Map<str
 
 /** Admin-only "Deleted items" view — every soft-deleted Job/Quote/Invoice in the org, newest deletion first, with who deleted it and when. */
 export async function listDeletedItems(): Promise<DeletedItems> {
-  const [jobs, quotes, invoices, properties] = await Promise.all([
+  const [jobs, quotes, invoices, properties, customers] = await Promise.all([
     db.job.findMany({
       where: { organisationId: ORG_ID, deletedAt: { not: null } },
       select: { id: true, jobNumber: true, deletedAt: true, deletedById: true, customer: { select: { name: true } } },
@@ -54,6 +56,11 @@ export async function listDeletedItems(): Promise<DeletedItems> {
       },
       orderBy: { deletedAt: "desc" },
     }),
+    db.customer.findMany({
+      where: { organisationId: ORG_ID, deletedAt: { not: null } },
+      select: { id: true, name: true, company: true, deletedAt: true, deletedById: true },
+      orderBy: { deletedAt: "desc" },
+    }),
   ]);
 
   const nameById = await resolveDeletedByNames([
@@ -61,6 +68,7 @@ export async function listDeletedItems(): Promise<DeletedItems> {
     ...quotes.map((q) => q.deletedById),
     ...invoices.map((i) => i.deletedById),
     ...properties.map((p) => p.deletedById),
+    ...customers.map((c) => c.deletedById),
   ]);
 
   return {
@@ -92,6 +100,13 @@ export async function listDeletedItems(): Promise<DeletedItems> {
       customerName: p.customer.name,
       deletedAt: p.deletedAt!,
       deletedByName: p.deletedById ? nameById.get(p.deletedById) ?? null : null,
+    })),
+    customers: customers.map((c) => ({
+      id: c.id,
+      name: c.name,
+      company: c.company,
+      deletedAt: c.deletedAt!,
+      deletedByName: c.deletedById ? nameById.get(c.deletedById) ?? null : null,
     })),
   };
 }

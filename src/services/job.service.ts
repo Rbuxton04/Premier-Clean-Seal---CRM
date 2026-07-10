@@ -95,6 +95,7 @@ export async function listJobs(status?: string, technicianId?: string): Promise<
     where: {
       organisationId: ORG_ID,
       deletedAt: null,
+      customer: { deletedAt: null },
       ...(status ? { status: status as JobStatus } : {}),
       ...(technicianId ? { technicianId } : {}),
     },
@@ -106,7 +107,7 @@ export async function listJobs(status?: string, technicianId?: string): Promise<
 
 export async function getJob(id: string): Promise<JobDetail | null> {
   const row = await db.job.findFirst({
-    where: { id, organisationId: ORG_ID, deletedAt: null },
+    where: { id, organisationId: ORG_ID, deletedAt: null, customer: { deletedAt: null } },
     include: {
       customer: { select: { id: true, name: true, email: true, phone: true } },
       property: { select: { id: true, addressLine1: true, postcode: true } },
@@ -147,12 +148,12 @@ export async function listCalendarData(
   const [technicians, scheduled, unscheduled] = await Promise.all([
     listTechnicians(),
     db.job.findMany({
-      where: { organisationId: ORG_ID, deletedAt: null, scheduledStart: { gte: weekStart, lt: weekEnd } },
+      where: { organisationId: ORG_ID, deletedAt: null, customer: { deletedAt: null }, scheduledStart: { gte: weekStart, lt: weekEnd } },
       include: jobListInclude,
       orderBy: { scheduledStart: "asc" },
     }),
     db.job.findMany({
-      where: { organisationId: ORG_ID, deletedAt: null, scheduledStart: null, status: { notIn: ["COMPLETED", "CANCELLED"] } },
+      where: { organisationId: ORG_ID, deletedAt: null, customer: { deletedAt: null }, scheduledStart: null, status: { notIn: ["COMPLETED", "CANCELLED"] } },
       include: jobListInclude,
       orderBy: { createdAt: "desc" },
     }),

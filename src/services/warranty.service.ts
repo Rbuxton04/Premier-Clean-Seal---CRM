@@ -35,6 +35,7 @@ export async function listWarranties(query?: string): Promise<WarrantyListItem[]
     where: {
       job: {
         organisationId: ORG_ID,
+        customer: { deletedAt: null },
         ...(query
           ? {
               OR: [

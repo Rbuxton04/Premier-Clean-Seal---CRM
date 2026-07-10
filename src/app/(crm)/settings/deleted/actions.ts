@@ -74,3 +74,20 @@ export async function restorePropertyAction(id: string): Promise<RecordActionRes
     throw err;
   }
 }
+
+export async function restoreCustomerAction(id: string): Promise<RecordActionResult> {
+  try {
+    const actor = await requireAdmin();
+    await CustomerService.restoreCustomer(id);
+    const { ip } = await actorContext();
+    await writeAudit({ userId: actor.id, action: "RESTORE", resource: "customer", resourceId: id, ip });
+    revalidateAfterRestore();
+    revalidatePath("/search");
+    revalidatePath("/gallery");
+    revalidatePath("/dashboard");
+    return { ok: true, message: "Restored" };
+  } catch (err) {
+    if (err instanceof ForbiddenError) return { ok: false, message: err.message };
+    throw err;
+  }
+}

@@ -138,6 +138,7 @@ model Customer {
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
   deletedAt    DateTime?
+  deletedById  String? // plain scalar (no relation) -- same convention as Job.deletedById
   anonymisedAt DateTime? // set by the GDPR "erase" action; personal fields are scrubbed at that point
 
   @@index([organisationId, name])

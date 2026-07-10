@@ -46,7 +46,7 @@ const listInclude = {
 
 export async function listInvoices(): Promise<InvoiceListItem[]> {
   const rows = await db.invoice.findMany({
-    where: { customer: { organisationId: ORG_ID }, deletedAt: null },
+    where: { customer: { organisationId: ORG_ID, deletedAt: null }, deletedAt: null },
     include: listInclude,
     orderBy: { createdAt: "desc" },
   });
@@ -55,7 +55,7 @@ export async function listInvoices(): Promise<InvoiceListItem[]> {
 
 export async function getInvoice(id: string): Promise<InvoiceDetail | null> {
   const row = await db.invoice.findFirst({
-    where: { id, customer: { organisationId: ORG_ID }, deletedAt: null },
+    where: { id, customer: { organisationId: ORG_ID, deletedAt: null }, deletedAt: null },
     include: {
       customer: { select: { id: true, name: true, company: true } },
       job: {

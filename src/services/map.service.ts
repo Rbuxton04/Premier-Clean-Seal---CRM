@@ -36,6 +36,7 @@ export async function listJobsForMap(dateISO: string, technicianId?: string): Pr
     where: {
       organisationId: ORG_ID,
       deletedAt: null,
+      customer: { deletedAt: null },
       status: { not: "CANCELLED" },
       scheduledStart: { gte: start, lt: end },
       ...(technicianId ? { technicianId } : {}),
