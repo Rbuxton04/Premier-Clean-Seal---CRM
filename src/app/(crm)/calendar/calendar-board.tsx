@@ -160,16 +160,19 @@ export function CalendarBoard({
 
   return (
     <DndContext sensors={sensors} onDragStart={onDragStart} onDragEnd={onDragEnd}>
-      {/* min-w-0 on both grid items below is load-bearing: grid items default
-          to min-width:auto, which lets their content's intrinsic width
-          override overflow-x-auto and blow the whole grid out past this
-          container once available width gets tight -- at that point some
-          ancestor further up ends up scrolling instead of this div, which
-          breaks the sticky technician column's containing block. Without
-          min-w-0 here, the exact width this kicks in at depends on content
-          (job card text length), which is why it showed up as an "unsticks
-          below ~523px" symptom rather than a clean breakpoint. */}
-      <div className="grid gap-4 lg:grid-cols-[220px_1fr]">
+      {/* grid-cols-1 (rather than leaving the base case to fall back to an
+          implicit column) is load-bearing: an implicit column sizes with
+          `auto`, whose max is the content's max-content width, so it can
+          stretch past this container's own width once available width gets
+          tight -- at that point the PAGE ends up scrolling horizontally
+          instead of the inner overflow-x-auto div, which drags the sticky
+          technician column along with it since it's only pinned relative to
+          that inner div. grid-cols-1 forces minmax(0,1fr) tracks instead,
+          which never grow past available space. min-w-0 on both items below
+          is the belt-and-braces companion fix: it stops their own
+          min-content size from forcing the track wider than available
+          space, same failure mode, opposite (minimum vs maximum) direction. */}
+      <div className="grid grid-cols-1 gap-4 lg:grid-cols-[220px_1fr]">
         <div className="min-w-0">
           <h3 className="mb-2 text-sm font-semibold">Unscheduled</h3>
           <Tray jobs={unscheduledJobs} />
