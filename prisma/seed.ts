@@ -329,21 +329,23 @@ async function main() {
     console.log("Seeded sample quotes.");
   }
 
-  // Sample technicians (idempotent -- upsert by email, never createMany,
-  // which throws P2002 on a unique-email clash against rows that already
-  // exist from an earlier seed run).
-  for (const tech of [
-    { name: "Roman", email: "roman@premiercleanandseal.co.uk" },
-    { name: "Danny", email: "danny@premiercleanandseal.co.uk" },
-    { name: "Mia", email: "mia@premiercleanandseal.co.uk" },
-  ]) {
-    await db.user.upsert({
-      where: { email: tech.email },
-      update: {},
-      create: { organisationId: org.id, name: tech.name, email: tech.email, role: "TECHNICIAN", roles: ["TECHNICIAN"] },
-    });
+  // One-time cleanup: remove the old sample technicians "Danny" and "Mia" by
+  // their known seed emails, if they're still around from an earlier seed
+  // run. Unassigns any jobs/enquiries pointing at them first (Job.technician
+  // and Enquiry.assignedTo are both optional relations) so the delete never
+  // fails on a foreign key -- this is test data, so simple removal is fine.
+  // Safe to run on every deploy: once removed, the lookup returns nothing
+  // and this is a no-op from then on. Roman (the owner/dev account) is
+  // handled separately below and is never touched here.
+  const sampleStaffEmails = ["danny@premiercleanandseal.co.uk", "mia@premiercleanandseal.co.uk"];
+  const sampleStaff = await db.user.findMany({ where: { email: { in: sampleStaffEmails } }, select: { id: true, name: true } });
+  if (sampleStaff.length > 0) {
+    const sampleStaffIds = sampleStaff.map((u) => u.id);
+    await db.job.updateMany({ where: { technicianId: { in: sampleStaffIds } }, data: { technicianId: null } });
+    await db.enquiry.updateMany({ where: { assignedToId: { in: sampleStaffIds } }, data: { assignedToId: null } });
+    await db.user.deleteMany({ where: { id: { in: sampleStaffIds } } });
+    console.log(`Removed ${sampleStaff.length} sample technician account(s) (Danny/Mia).`);
   }
-  console.log("Ensured sample technicians exist.");
 
   // Backfill roles[] from the legacy role column for any user that predates
   // the roles[] field (e.g. every row that existed before this deploy's
