@@ -138,9 +138,16 @@ export async function leadConversion(): Promise<LeadConversion> {
 
 export type ColourUsage = { colour: string; count: number; pct: number };
 
+/**
+ * Only counts materials on COMPLETED, non-deleted jobs -- materials are only
+ * truly "used" once the job is finished, so this naturally excludes deleted,
+ * cancelled, and still-in-progress jobs in one rule. Keeps this in step with
+ * mostProfitableServices, which applies the same completed + not-deleted
+ * filter.
+ */
 export async function topColours(limit = 8): Promise<ColourUsage[]> {
   const usages = await db.materialUsage.findMany({
-    where: { job: { organisationId: ORG_ID } },
+    where: { job: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" } },
     select: { product: { select: { colour: true } } },
   });
 
@@ -156,9 +163,10 @@ export async function topColours(limit = 8): Promise<ColourUsage[]> {
 
 export type ProductUsage = { product: string; count: number };
 
+/** Same completed + not-deleted rule as topColours -- see comment above. */
 export async function topProducts(limit = 8): Promise<ProductUsage[]> {
   const usages = await db.materialUsage.findMany({
-    where: { job: { organisationId: ORG_ID } },
+    where: { job: { organisationId: ORG_ID, deletedAt: null, status: "COMPLETED" } },
     select: { product: { select: { manufacturer: true, name: true } } },
   });
 

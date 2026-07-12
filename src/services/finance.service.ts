@@ -277,6 +277,13 @@ export async function getJobValueSummary(period: FinancePeriod): Promise<JobValu
 export type MaterialsCostByProduct = { productId: string; productName: string; totalCost: number; totalQuantity: number };
 export type MaterialsCostSummary = { period: FinancePeriod; totalCost: number; byProduct: MaterialsCostByProduct[] };
 
+/**
+ * Deliberately broader than analytics.service.ts's topColours/topProducts
+ * (which only count COMPLETED jobs): this is a real spend/cost report, and
+ * money spent on materials for a since-cancelled or still-in-progress job is
+ * still money spent, so it stays in the total. Only deletedAt-hidden jobs
+ * are excluded, matching the rest of this file's finance-reporting rule.
+ */
 export async function getMaterialsCostSummary(period: FinancePeriod): Promise<MaterialsCostSummary> {
   const usages = await db.materialUsage.findMany({
     where: { job: { organisationId: ORG_ID, deletedAt: null, createdAt: { gte: period.from, lt: period.to } } },
