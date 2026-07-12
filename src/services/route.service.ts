@@ -242,8 +242,20 @@ async function resolveFinish(
 
 async function getTechnicianHomePoint(technicianId: string): Promise<FinishCandidate | null> {
   const home = await getTechnicianHome(technicianId);
-  if (!home || home.homeLatitude == null || home.homeLongitude == null) return null;
-  return { latitude: home.homeLatitude, longitude: home.homeLongitude, label: "Home", address: home.homeAddress };
+  if (!home || !home.homeAddress) return null;
+  if (home.homeLatitude != null && home.homeLongitude != null) {
+    return { latitude: home.homeLatitude, longitude: home.homeLongitude, label: "Home", address: home.homeAddress };
+  }
+  // Address saved without matching coordinates (e.g. older data from before
+  // setTechnicianHomeAddressAction required a successful geocode before
+  // saving) -- this was silently dropping the default-home finish with no
+  // warning, since every other "no finish" path (out-of-bounds, Mapbox not
+  // configured, finish-leg routing failure) still surfaces the home marker
+  // or a message, but a missing point here produced neither. Geocode the
+  // saved address on the fly instead of giving up.
+  const geocoded = await geocodeAddress(home.homeAddress);
+  if (!geocoded) return null;
+  return { latitude: geocoded.latitude, longitude: geocoded.longitude, label: "Home", address: home.homeAddress };
 }
 
 function scheduledOrderFallback(
