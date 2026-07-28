@@ -6,6 +6,7 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { isSupabaseStorageConfigured, uploadFile } from "@/lib/storage/supabase";
 import { isResendConfigured, sendQuoteEmail } from "@/lib/email/resend";
 import { renderQuotePdfBuffer, type QuotePdfData } from "@/lib/pdf/quote-pdf";
+import { appUrl } from "@/lib/url";
 import type { QuoteFormInput } from "@/validators/quote";
 import type { Findings } from "@/lib/ai/provider";
 
@@ -194,7 +195,7 @@ async function buildPdfData(quote: QuoteDetail): Promise<QuotePdfData> {
     depositAmount: quote.depositAmount != null ? Number(quote.depositAmount) : null,
     terms: quote.terms,
     warrantyMonths: quote.warrantyMonths,
-    approvalUrl: quote.approvalToken ? `${process.env.APP_URL ?? "http://localhost:3000"}/quote/${quote.approvalToken}` : undefined,
+    approvalUrl: quote.approvalToken ? `${appUrl()}/quote/${quote.approvalToken}` : undefined,
   };
 }
 
@@ -218,7 +219,7 @@ export async function sendQuote(id: string): Promise<SendQuoteResult> {
   });
 
   const refreshed = (await getQuote(id))!;
-  const approvalUrl = `${process.env.APP_URL ?? "http://localhost:3000"}/quote/${token}`;
+  const approvalUrl = `${appUrl()}/quote/${token}`;
 
   // PDF persistence to storage is best-effort — on-demand generation via the
   // download routes works regardless, so a failure here never blocks sending.

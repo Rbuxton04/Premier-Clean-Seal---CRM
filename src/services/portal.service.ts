@@ -2,6 +2,7 @@ import { randomBytes } from "crypto";
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
 import { getFileUrl } from "@/lib/storage/supabase";
+import { appUrl } from "@/lib/url";
 import { isResendConfigured, sendPortalLinkEmail as sendPortalLinkEmailViaResend } from "@/lib/email/resend";
 import { getQuote, recordQuoteViewedById, type QuoteDetail } from "@/services/quote.service";
 import { listDocuments, type DocumentItem } from "@/services/media.service";
@@ -19,10 +20,6 @@ import type { PortalContactInput, PortalRequestInput, PortalRequestKind } from "
 // ---------------------------------------------------------------------------
 
 const PORTAL_SCOPE = "portal";
-
-function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
-}
 
 export type PortalCustomer = { id: string; name: string; email: string | null; phone: string | null };
 

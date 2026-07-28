@@ -5,6 +5,7 @@ import { ORG_ID } from "@/lib/settings";
 import { isAiConfigured, getAiProvider } from "@/lib/ai";
 import { isEmailConfigured, sendMarketingEmail } from "@/lib/messaging/email";
 import { isSmsConfigured, sendSms } from "@/lib/messaging/sms";
+import { appUrl } from "@/lib/url";
 import { applicationAreaLabels } from "@/validators/completion";
 import {
   marketingToneLabels,
@@ -13,10 +14,6 @@ import {
   type GenerateCampaignInput,
   type RebookingRequestInput,
 } from "@/validators/marketing";
-
-function appUrl(): string {
-  return process.env.APP_URL ?? "http://localhost:3000";
-}
 
 // ---------------------------------------------------------------------------
 // Customer-facing tokens (reuses PortalToken — see the schema note in the
