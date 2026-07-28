@@ -95,7 +95,10 @@ a formal qualified e-signature service.
 - **Emailing needs `RESEND_API_KEY`.** Until it's set, "Send" still generates the approval
   token/link and marks the quote `SENT` — staff copy the link from the in-app banner instead of
   it being emailed. Add the key and `sendQuote()` starts emailing automatically, no other code
-  changes.
+  changes. Set `EMAIL_FROM` to a verified address on the connected Resend domain (e.g.
+  `Premier Clean & Seal <enquiries@premiercleanandseal.co.uk>`) — the domain must show
+  "Verified" in the Resend dashboard (Domains) before sends from it will succeed. `EMAIL_REPLY_TO`
+  is optional and routes customer replies to a normal inbox instead of the from-address.
 - **Deposit payment is a stub.** The approval page shows the deposit amount with a disabled
   "Pay deposit" button — real card payment needs Stripe (or another PSP), a later milestone.
 

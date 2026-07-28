@@ -10,7 +10,10 @@ export function isEmailConfigured(): boolean {
   return Boolean(process.env.RESEND_API_KEY);
 }
 
-const FROM_ADDRESS = "Premier Clean & Seal <marketing@premiercleanandseal.co.uk>";
+// Same EMAIL_FROM / EMAIL_REPLY_TO env vars as src/lib/email/resend.ts --
+// falls back to the original hardcoded address so nothing breaks if unset.
+const FROM_ADDRESS = process.env.EMAIL_FROM || "Premier Clean & Seal <marketing@premiercleanandseal.co.uk>";
+const REPLY_TO = process.env.EMAIL_REPLY_TO || undefined;
 
 export type SendMarketingEmailInput = {
   to: string;
@@ -34,6 +37,7 @@ export async function sendMarketingEmail(input: SendMarketingEmailInput): Promis
     body: JSON.stringify({
       from: FROM_ADDRESS,
       to: [input.to],
+      reply_to: REPLY_TO,
       subject: input.subject,
       html: input.html,
     }),

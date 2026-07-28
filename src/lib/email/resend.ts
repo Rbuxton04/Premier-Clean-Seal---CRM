@@ -17,7 +17,12 @@ export type SendQuoteEmailInput = {
   pdfBuffer?: Buffer;
 };
 
-const FROM_ADDRESS = "Premier Clean & Seal <quotes@premiercleanandseal.co.uk>";
+// EMAIL_FROM must be a verified sender on the connected Resend domain (see
+// .env.example) -- falls back to the original hardcoded address so nothing
+// breaks if it's left unset. EMAIL_REPLY_TO is optional: set it to route
+// customer replies to a normal inbox instead of the send-only from-address.
+const FROM_ADDRESS = process.env.EMAIL_FROM || "Premier Clean & Seal <quotes@premiercleanandseal.co.uk>";
+const REPLY_TO = process.env.EMAIL_REPLY_TO || undefined;
 
 export async function sendQuoteEmail(input: SendQuoteEmailInput): Promise<void> {
   if (!isResendConfigured()) {
@@ -41,6 +46,7 @@ export async function sendQuoteEmail(input: SendQuoteEmailInput): Promise<void> 
     body: JSON.stringify({
       from: FROM_ADDRESS,
       to: [input.to],
+      reply_to: REPLY_TO,
       subject: `Your quote ${input.quoteNumber} from Premier Clean & Seal`,
       html,
       attachments: input.pdfBuffer
@@ -83,6 +89,7 @@ export async function sendPortalLinkEmail(input: SendPortalLinkEmailInput): Prom
     body: JSON.stringify({
       from: FROM_ADDRESS,
       to: [input.to],
+      reply_to: REPLY_TO,
       subject: "Your Premier Clean & Seal customer portal",
       html,
     }),
