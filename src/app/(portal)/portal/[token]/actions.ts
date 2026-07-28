@@ -24,6 +24,10 @@ export async function approvePortalQuoteAction(
   const ip = headers().get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
   const result = await approveQuoteForCustomer(quoteId, customer.id, parsed.data.name, ip);
   revalidatePath(`/portal/${token}`);
+  // Also revalidate the staff-facing CRM views so "Convert to job" becomes
+  // available there as soon as staff next look, not just on the portal.
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath("/quotes");
   return result.ok ? { ok: true, message: "Quote approved — thank you!" } : { ok: false, message: result.message };
 }
 
@@ -41,6 +45,8 @@ export async function rejectPortalQuoteAction(
 
   const result = await rejectQuoteForCustomer(quoteId, customer.id, parsed.data.reason);
   revalidatePath(`/portal/${token}`);
+  revalidatePath(`/quotes/${quoteId}`);
+  revalidatePath("/quotes");
   return result.ok ? { ok: true, message: "Quote declined." } : { ok: false, message: result.message };
 }
 

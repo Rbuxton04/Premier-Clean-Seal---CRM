@@ -3,6 +3,17 @@ const nextConfig = {
   images: {
     remotePatterns: [{ protocol: "https", hostname: "**.r2.cloudflarestorage.com" }],
   },
+  experimental: {
+    // Next's client-side Router Cache otherwise reuses a dynamic route's
+    // previously-fetched RSC payload for up to 30s on soft navigation (back
+    // button, <Link>), even though every server-side hit is already fully
+    // fresh (Prisma, no fetch cache, and dynamic = "force-dynamic" on the
+    // pages that need this). That's what made quote approvals appear stale
+    // -- e.g. the CRM quote page still showing "Convert to job" disabled --
+    // until a manual hard refresh. Setting this to 0 makes every soft
+    // navigation to a dynamic route re-fetch, closing that gap app-wide.
+    staleTimes: { dynamic: 0 },
+  },
   async headers() {
     // Baseline hardening. No strict script-src nonce here (Next's inline
     // bootstrap scripts would need one wired through the App Router), but

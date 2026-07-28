@@ -16,8 +16,15 @@ export async function approveQuoteAction(token: string, _prev: ApprovalFormState
   if (!parsed.success) return { ok: false, message: parsed.error.errors[0]?.message ?? "Please type your name." };
 
   const ip = headers().get("x-forwarded-for")?.split(",")[0]?.trim() ?? null;
+  const quote = await QuoteService.getQuoteByToken(token);
   const result = await QuoteService.approveQuote(token, parsed.data.name, ip);
   revalidatePath(`/quote/${token}`);
+  // Also revalidate the staff-facing CRM views so "Convert to job" becomes
+  // available there as soon as staff next look, not just on this page.
+  if (quote) {
+    revalidatePath(`/quotes/${quote.id}`);
+    revalidatePath("/quotes");
+  }
   return result.ok ? { ok: true, message: "Quote approved — thank you!" } : { ok: false, message: result.message };
 }
 
@@ -28,7 +35,12 @@ export async function rejectQuoteAction(token: string, _prev: ApprovalFormState,
   const parsed = rejectQuoteSchema.safeParse({ reason: formData.get("reason") || undefined });
   if (!parsed.success) return { ok: false, message: "Something went wrong." };
 
+  const quote = await QuoteService.getQuoteByToken(token);
   const result = await QuoteService.rejectQuote(token, parsed.data.reason);
   revalidatePath(`/quote/${token}`);
+  if (quote) {
+    revalidatePath(`/quotes/${quote.id}`);
+    revalidatePath("/quotes");
+  }
   return result.ok ? { ok: true, message: "Quote declined." } : { ok: false, message: result.message };
 }
