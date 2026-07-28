@@ -1,3 +1,4 @@
+import type { Prisma, PaymentStatus } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ORG_ID } from "@/lib/settings";
 import { renderInvoicePdfBuffer, type InvoicePdfData } from "@/lib/pdf/invoice-pdf";
@@ -44,9 +45,54 @@ const listInclude = {
   job: { select: { id: true, jobNumber: true } },
 };
 
-export async function listInvoices(): Promise<InvoiceListItem[]> {
+export type InvoiceListFilters = {
+  /** Bounds the invoice's createdAt -- the same field the list already sorts and displays as its date column. */
+  from?: Date;
+  /** Exclusive upper bound. */
+  to?: Date;
+  customerId?: string;
+  status?: PaymentStatus;
+  /** Matched against invoice number, customer name (both contains/insensitive), and amount (exact, if q parses as a plain number). */
+  q?: string;
+};
+
+export async function listInvoices(filters: InvoiceListFilters = {}): Promise<InvoiceListItem[]> {
+  const { from, to, customerId, status, q } = filters;
+  const now = new Date();
+  const trimmedQ = q?.trim();
+  // Decimal columns can't be substring-matched by Prisma without raw SQL, so
+  // a query that parses cleanly as a plain number (e.g. "150" or "150.00")
+  // matches the amount exactly; invoice number and customer name still get
+  // a normal contains match either way.
+  const numericQ = trimmedQ && /^\d+(\.\d{1,2})?$/.test(trimmedQ) ? Number(trimmedQ) : null;
+
+  const conditions: Prisma.InvoiceWhereInput[] = [
+    { customer: { organisationId: ORG_ID, deletedAt: null } },
+    { deletedAt: null },
+  ];
+  if (from || to) conditions.push({ createdAt: { ...(from ? { gte: from } : {}), ...(to ? { lt: to } : {}) } });
+  if (customerId) conditions.push({ customerId });
+  if (status === "OVERDUE") {
+    // Same "overdue" definition as the Finance area (finance.service.ts):
+    // explicitly OVERDUE, or unpaid/partially-paid and past its due date --
+    // an invoice can be overdue in practice without ever having its status
+    // field flipped to OVERDUE.
+    conditions.push({ OR: [{ status: "OVERDUE" }, { status: { in: ["UNPAID", "PARTIALLY_PAID"] }, dueDate: { lt: now } }] });
+  } else if (status) {
+    conditions.push({ status });
+  }
+  if (trimmedQ) {
+    conditions.push({
+      OR: [
+        { invoiceNumber: { contains: trimmedQ, mode: "insensitive" } },
+        { customer: { name: { contains: trimmedQ, mode: "insensitive" } } },
+        ...(numericQ != null ? [{ amount: { equals: numericQ } }] : []),
+      ],
+    });
+  }
+
   const rows = await db.invoice.findMany({
-    where: { customer: { organisationId: ORG_ID, deletedAt: null }, deletedAt: null },
+    where: { AND: conditions },
     include: listInclude,
     orderBy: { createdAt: "desc" },
   });

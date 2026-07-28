@@ -6,23 +6,38 @@ import { Button } from "@/components/ui/button";
 import { Table, TableHeader, TableBody, TableRow, TableHead, TableCell } from "@/components/ui/table";
 import { formatGBP } from "@/lib/utils";
 import { listInvoices } from "@/services/invoice.service";
-import { paymentStatusLabels } from "@/validators/job";
+import { listCustomers } from "@/services/customer.service";
+import { paymentStatuses, paymentStatusLabels } from "@/validators/job";
 import type { InvoiceListItem } from "@/services/invoice.service";
 import { getCurrentUser } from "@/lib/auth";
 import { canViewFinancials, hasRole } from "@/lib/permissions";
 import { DeleteInvoiceButton } from "./delete-invoice-button";
+import { InvoiceFilters } from "./invoice-filters";
+import { invoicePeriodPresets, resolveInvoicePeriod, type InvoicePeriodPreset } from "./invoice-period";
 
 export const dynamic = "force-dynamic";
 
-async function loadInvoices() {
+type InvoicesSearchParams = { period?: string; from?: string; to?: string; customerId?: string; status?: string; q?: string };
+
+async function loadInvoices(searchParams: InvoicesSearchParams) {
+  const preset = (invoicePeriodPresets.find((p) => p === searchParams.period) ?? "all") as InvoicePeriodPreset;
+  const range = resolveInvoicePeriod(preset, searchParams.from, searchParams.to);
+  const status = paymentStatuses.find((s) => s === searchParams.status);
+  const customerId = searchParams.customerId || undefined;
+  const q = searchParams.q || undefined;
+
   try {
-    return { invoices: await listInvoices(), dbOnline: true };
+    const [invoices, customers] = await Promise.all([
+      listInvoices({ from: range.from, to: range.to, customerId, status, q }),
+      listCustomers(),
+    ]);
+    return { invoices, customers, dbOnline: true as const };
   } catch {
-    return { invoices: [] as InvoiceListItem[], dbOnline: false };
+    return { invoices: [] as InvoiceListItem[], customers: [] as Awaited<ReturnType<typeof listCustomers>>, dbOnline: false as const };
   }
 }
 
-export default async function InvoicesPage() {
+export default async function InvoicesPage({ searchParams }: { searchParams: InvoicesSearchParams }) {
   const user = await getCurrentUser();
   if (!canViewFinancials(user?.roles ?? [])) {
     return (
@@ -36,7 +51,10 @@ export default async function InvoicesPage() {
     );
   }
   const isAdmin = hasRole(user, "ADMIN");
-  const { invoices, dbOnline } = await loadInvoices();
+  const { invoices, customers, dbOnline } = await loadInvoices(searchParams);
+  const hasFilters = Boolean(
+    (searchParams.period && searchParams.period !== "all") || searchParams.customerId || searchParams.status || searchParams.q
+  );
 
   return (
     <div className="space-y-4">
@@ -52,8 +70,20 @@ export default async function InvoicesPage() {
       )}
 
       {dbOnline && (
+        <>
+          <InvoiceFilters customers={customers.map((c) => ({ id: c.id, name: c.name, company: c.company }))} />
+          <p className="text-xs text-muted-foreground">
+            Showing {invoices.length} invoice{invoices.length === 1 ? "" : "s"}
+            {hasFilters ? " matching your filters" : ""}.
+          </p>
+        </>
+      )}
+
+      {dbOnline && (
         invoices.length === 0 ? (
-          <p className="text-sm text-muted-foreground">No invoices yet — these are raised automatically when a job is completed.</p>
+          <p className="text-sm text-muted-foreground">
+            {hasFilters ? "No invoices match your filters." : "No invoices yet — these are raised automatically when a job is completed."}
+          </p>
         ) : (
           <Table>
             <TableHeader>
