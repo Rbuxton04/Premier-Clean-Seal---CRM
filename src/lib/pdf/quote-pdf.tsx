@@ -1,7 +1,15 @@
 import React from "react";
 import fs from "fs";
 import path from "path";
-import { Document, Page, View, Text, Image, Svg, Path, StyleSheet, renderToBuffer } from "@react-pdf/renderer";
+import { Document, Page, View, Text, Link, Image, Svg, Path, StyleSheet, Font, renderToBuffer } from "@react-pdf/renderer";
+
+// react-pdf auto-hyphenates any word too long to fit its line, inserting a
+// "-" at the break point -- for an unbroken string like a URL, that silently
+// corrupts it (e.g. premiercleanandseal.co.uk -> premiercleanand-seal.co.uk).
+// Disabling this globally is the standard fix; the approval link below is
+// also rendered as a short-label button rather than raw wrappable text, so
+// it can never hit this path regardless.
+Font.registerHyphenationCallback((word) => [word]);
 
 export type QuotePdfLineItem = { description: string; quantity: number; unit: string; unitPrice: number; total: number };
 
@@ -62,6 +70,18 @@ const styles = StyleSheet.create({
   footerSection: { marginTop: 20, paddingTop: 12, borderTopWidth: 0.5, borderTopColor: "#E0E0E0" },
   approvalBox: { marginTop: 16, padding: 12, backgroundColor: "#EDE7F6", borderRadius: 4 },
   approvalTitle: { fontSize: 11, fontFamily: "Helvetica-Bold", color: PLUM, marginBottom: 4 },
+  approvalButton: {
+    alignSelf: "flex-start",
+    marginTop: 8,
+    backgroundColor: PLUM,
+    color: "#FFFFFF",
+    fontSize: 10,
+    fontFamily: "Helvetica-Bold",
+    paddingVertical: 8,
+    paddingHorizontal: 16,
+    borderRadius: 4,
+    textDecoration: "none",
+  },
   small: { fontSize: 8, color: SLATE, marginTop: 10 },
 });
 
@@ -168,8 +188,11 @@ function QuoteDocument({ data, logoSrc }: { data: QuotePdfData; logoSrc: string 
           <View style={styles.approvalBox}>
             <Text style={styles.approvalTitle}>Ready to go ahead?</Text>
             <Text style={styles.bodyText}>
-              Approve this quote online at: {data.approvalUrl}
+              Review the full breakdown and approve online using the button below.
             </Text>
+            <Link src={data.approvalUrl} style={styles.approvalButton}>
+              Approve Quote Online
+            </Link>
           </View>
         )}
 

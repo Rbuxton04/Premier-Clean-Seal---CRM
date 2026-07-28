@@ -29,10 +29,17 @@ export async function sendQuoteEmail(input: SendQuoteEmailInput): Promise<void> 
     throw new Error("RESEND_API_KEY is not set.");
   }
 
+  // The visible text is a short label, not the raw URL -- the exact URL only
+  // ever lives in the href, so it can't be corrupted by an email client
+  // inserting a soft hyphen where long wrappable text wraps onto a new line.
   const html = `
     <p>Hi ${input.customerName},</p>
     <p>Please find your quote <strong>${input.quoteNumber}</strong> from Premier Clean &amp; Seal attached.</p>
-    <p><a href="${input.approvalUrl}">View and approve your quote online</a></p>
+    <div style="text-align:center; margin:20px 0;">
+      <a href="${input.approvalUrl}" style="background:#3C2263; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:6px; font-size:14px; font-weight:600; display:inline-block;">
+        Approve Quote Online
+      </a>
+    </div>
     <p>This link lets you review the full breakdown, approve or decline, and see our warranty terms.</p>
     <p>Thanks,<br/>Premier Clean &amp; Seal</p>
   `;
@@ -75,7 +82,11 @@ export async function sendPortalLinkEmail(input: SendPortalLinkEmailInput): Prom
   const html = `
     <p>Hi ${input.customerName},</p>
     <p>You can view your quotes, invoices, warranty certificates and job photos with Premier Clean &amp; Seal any time using your own customer portal:</p>
-    <p><a href="${input.url}">Open your customer portal</a></p>
+    <div style="text-align:center; margin:20px 0;">
+      <a href="${input.url}" style="background:#3C2263; color:#ffffff; text-decoration:none; padding:12px 24px; border-radius:6px; font-size:14px; font-weight:600; display:inline-block;">
+        Open Your Customer Portal
+      </a>
+    </div>
     <p>No password needed — this link is just for you. If you didn't expect this email, please ignore it.</p>
     <p>Thanks,<br/>Premier Clean &amp; Seal</p>
   `;
