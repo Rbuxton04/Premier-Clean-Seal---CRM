@@ -9,6 +9,7 @@ export type Resource =
   | "customers"
   | "quotes"
   | "jobs"
+  | "properties"
   | "invoices"
   | "financials"
   | "materials"
@@ -38,6 +39,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     customers: ["read", "create", "update", "delete"],
     quotes: ["read", "create", "update", "delete"],
     jobs: ["read", "create", "update", "delete"],
+    properties: ["read", "create", "update", "delete"],
     invoices: ["read", "create", "update"],
     financials: ["read"],
     materials: ["read", "create", "update", "delete"],
@@ -53,6 +55,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     customers: ["read", "create", "update"],
     quotes: ["read", "create", "update"],
     jobs: ["read"],
+    // Read-only -- a return-visit quote needs the property's sealant/price
+    // history, but setting up hotel groups/rooms is an office task.
+    properties: ["read"],
     financials: ["read"],
     materials: ["read"],
     gallery: ["read", "create"],
@@ -63,12 +68,17 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     customers: ["read", "create", "update"],
     quotes: ["read", "create"],
     jobs: ["read"],
+    properties: ["read"],
     marketing: ["read", "create", "update"],
     search: ["read"],
     portal: ["read", "create"],
   },
   TECHNICIAN: {
     jobs: ["read", "update"], // scoped to assigned jobs only — enforced in job.service/page, not here
+    // read+update, not create/delete: marking rooms done/scheduled/snag in
+    // the field is an update; setting up a new hotel/group/bulk room list
+    // stays an office task, same split as jobs above.
+    properties: ["read", "update"],
     gallery: ["read", "create"],
     documents: ["read"],
   },
@@ -76,6 +86,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     customers: ["read"],
     quotes: ["read"],
     jobs: ["read"],
+    properties: ["read"],
     invoices: ["read"],
     financials: ["read"],
     materials: ["read"],

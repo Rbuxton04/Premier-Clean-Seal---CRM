@@ -48,6 +48,8 @@ model Organisation {
   permissions  Permission[]
   mediaFiles   MediaFile[]
   insightReports InsightReport[]
+  hotelGroups     HotelGroup[]
+  hotelProperties HotelProperty[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -134,6 +136,7 @@ model Customer {
   portalTokens   PortalToken[]
   mediaFiles     MediaFile[]
   tags           Tag[]           @relation("CustomerTags")
+  hotelProperties HotelProperty[]
 
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -448,6 +451,7 @@ model Job {
   reminders   MarketingReminder[]
   healthScore JobHealthScore?
   timeline    TimelineEvent[]
+  roomVisits  RoomVisit[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -761,4 +765,216 @@ model PendingAITask {
   attempts  Int      @default(0)
   lastError String?
   createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Property & Room Tracker (hotel groups -> properties -> rooms -> works
+// history). This is a separate concept from the Property model above, which
+// is a single job-site address hung off exactly one Customer and used by
+// Job/Enquiry -- HotelProperty is a hospitality-specific tracking unit (an
+// estate of many bathrooms worked repeatedly over years) with its own
+// pricing, sealant, and site-contact fields, and its customerId link is
+// optional (a prospect hotel can be tracked before it's ever invoiced). It's
+// named HotelProperty rather than Property purely to avoid the model-name
+// clash -- it still reuses the real Customer and Job models via optional
+// relations rather than inventing parallel concepts for either.
+// ---------------------------------------------------------------------------
+
+model HotelGroup {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  name           String
+  contactName    String?
+  contactEmail   String?
+  contactPhone   String?
+  notes          String?
+  properties     HotelProperty[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Soft delete -- mirrors Customer.deletedAt / Job.deletedAt. deletedById is
+  // a plain scalar (no relation), same convention as Job.deletedById.
+  // Deleting a group never cascades -- its properties survive untouched,
+  // just rebucketed under "Independent" once the group stops matching any
+  // deletedAt: null query.
+  deletedAt   DateTime?
+  deletedById String?
+
+  @@index([organisationId, name])
+}
+
+enum BathroomType {
+  FULL_BATH
+  SHOWER_ONLY
+  BATH_ONLY
+}
+
+model HotelProperty {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  hotelGroupId   String?
+  hotelGroup     HotelGroup? @relation(fields: [hotelGroupId], references: [id])
+  // Optional -- ties the property to the Customer actually invoiced, once
+  // one exists. Left null for a prospect hotel that's being tracked (or
+  // quoted) before any commercial relationship is recorded.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+
+  name         String
+  addressLine1 String
+  town         String?
+  region       String?
+  postcode     String
+
+  // Cached Mapbox geocode result, same pattern as Property.latitude/
+  // longitude above -- set once and reused, see ensureHotelPropertyGeocoded
+  // in hotel-property.service.ts.
+  latitude  Float?
+  longitude Float?
+
+  // Total rooms in the hotel, vs. rooms actually tracked (rooms.length) --
+  // sizes the remaining untracked opportunity on the property page.
+  totalBedrooms Int?
+
+  siteContactName  String?
+  siteContactRole  String?
+  siteContactPhone String?
+  siteContactEmail String?
+  accessNotes      String?
+
+  sealantBrand        String?
+  sealantColour       String?
+  sealantTubePriceGbp Decimal? @db.Decimal(10, 2)
+  // Per-property price overrides -- fall back to the app defaults
+  // (DEFAULT_PRICE_FULL_BATH_GBP / DEFAULT_PRICE_SHOWER_ONLY_GBP in
+  // room.service.ts) when null, so a premium colour-match property can be
+  // priced higher without touching the global defaults. BATH_ONLY rooms are
+  // priced the same as priceFullBathGbp -- see roomPriceGbp() for why.
+  priceFullBathGbp   Decimal? @db.Decimal(10, 2)
+  priceShowerOnlyGbp Decimal? @db.Decimal(10, 2)
+
+  resealIntervalMonths Int @default(36)
+
+  notes String?
+  rooms Room[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Soft delete -- mirrors Property.deletedAt. Never cascades: rooms and
+  // their works history survive untouched, only the property's own
+  // visibility (index/group/due-list pages) is hidden.
+  deletedAt   DateTime?
+  deletedById String?
+
+  @@index([organisationId, hotelGroupId])
+  @@index([organisationId, region, name])
+}
+
+enum RoomStatus {
+  NOT_STARTED
+  SCHEDULED
+  DONE
+  NO_ACCESS
+  SNAG
+}
+
+model Room {
+  id         String        @id @default(cuid())
+  propertyId String
+  property   HotelProperty @relation(fields: [propertyId], references: [id])
+
+  // String, not int -- hotels number rooms "12a", "G04", "Suite 2".
+  roomNumber   String
+  // A label, not a relation -- "Ground", "1", "Annexe" -- deliberately no
+  // Floor table (see the property page's floor grouping, done with a plain
+  // groupBy over this string).
+  floor        String?
+  bathroomType BathroomType @default(FULL_BATH)
+  status       RoomStatus   @default(NOT_STARTED)
+  // Denormalised from the most recent completing visit (see
+  // markRoomDone in room.service.ts) so the reseal-due query stays a cheap
+  // scalar comparison instead of a correlated subquery per room.
+  lastCompletedAt DateTime?
+  // Preserves entry order within a floor (bulk-generated rooms keep the
+  // order they were typed in, e.g. "101-124").
+  sortIndex Int     @default(0)
+  notes     String?
+
+  visits RoomVisit[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Soft delete -- same convention as HotelProperty.deletedAt. Visit history
+  // is never deleted through normal UI even if the room record itself is.
+  deletedAt   DateTime?
+  deletedById String?
+
+  // A hotel never reuses a room number, so this is the natural key. Note
+  // this constraint applies regardless of deletedAt -- a soft-deleted room's
+  // number can't be reused by a fresh row; that's an acceptable edge case
+  // (restore the old room instead) rather than the far more complex
+  // deletedAt-partial-unique-index alternative.
+  @@unique([propertyId, roomNumber])
+  @@index([propertyId, floor, sortIndex])
+  @@index([propertyId, status])
+}
+
+enum RoomWorkType {
+  CUT_OUT_AND_RESEAL
+  NEW_APPLICATION
+  GROUT_STEAM
+  SNAG_RETURN
+  SURVEY
+}
+
+// The works history -- a room holds many visits, never a single "date done"
+// field. A hotel gets resealed repeatedly over the years, and overwriting a
+// date would destroy the history that makes the reseal-due list possible.
+model RoomVisit {
+  id     String @id @default(cuid())
+  roomId String
+  room   Room   @relation(fields: [roomId], references: [id])
+  // Optional -- ties a block of rooms to the Job they were invoiced under,
+  // reusing the existing Job model rather than inventing a parallel one.
+  jobId String?
+  job   Job?    @relation(fields: [jobId], references: [id])
+
+  visitDate DateTime
+  workType  RoomWorkType
+
+  linearMetres Decimal? @db.Decimal(8, 2)
+  // Snapshot of the price actually charged at the time -- deliberately never
+  // recomputed from the property's current prices, so historical visits stay
+  // accurate even after a property's rates change later.
+  priceGbp      Decimal? @db.Decimal(10, 2)
+  sealantBrand  String?
+  sealantColour String?
+  tubesUsed     Decimal? @db.Decimal(6, 2)
+  operative     String?
+  notes         String?
+
+  photos RoomVisitPhoto[]
+
+  createdAt DateTime @default(now())
+
+  @@index([roomId, visitDate])
+}
+
+enum RoomVisitPhotoKind {
+  BEFORE
+  AFTER
+}
+
+model RoomVisitPhoto {
+  id          String    @id @default(cuid())
+  roomVisitId String
+  roomVisit   RoomVisit @relation(fields: [roomVisitId], references: [id], onDelete: Cascade)
+  // Private bucket (SUPABASE_STORAGE_BUCKET), served via a signed URL from
+  // the existing storage helper -- see src/lib/storage/supabase.ts.
+  storagePath String
+  kind        RoomVisitPhotoKind
+  caption     String?
+  createdAt   DateTime @default(now())
 }
