@@ -10,6 +10,7 @@ export type Resource =
   | "quotes"
   | "jobs"
   | "properties"
+  | "certifications"
   | "invoices"
   | "financials"
   | "materials"
@@ -40,6 +41,10 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     quotes: ["read", "create", "update", "delete"],
     jobs: ["read", "create", "update", "delete"],
     properties: ["read", "create", "update", "delete"],
+    // Deletion is hard-restricted to ADMIN via requireAdmin() in the delete
+    // action itself (same real convention as Job/Customer delete), so
+    // "delete" is deliberately absent here even for OFFICE.
+    certifications: ["read", "create", "update"],
     invoices: ["read", "create", "update"],
     financials: ["read"],
     materials: ["read", "create", "update", "delete"],
@@ -79,6 +84,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     // the field is an update; setting up a new hotel/group/bulk room list
     // stays an office task, same split as jobs above.
     properties: ["read", "update"],
+    // Read-only -- a technician can check their own CSCS/DBS expiry, but
+    // adding/editing certification records is an office task.
+    certifications: ["read"],
     gallery: ["read", "create"],
     documents: ["read"],
   },
@@ -87,6 +95,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     quotes: ["read"],
     jobs: ["read"],
     properties: ["read"],
+    certifications: ["read"],
     invoices: ["read"],
     financials: ["read"],
     materials: ["read"],

@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Inbox, Users, FileText, Wrench, CalendarDays,
-  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Map, PoundSterling, Building2,
+  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Map, PoundSterling, Building2, FileBadge,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@prisma/client";
@@ -39,6 +39,7 @@ export const navGroups: NavGroup[] = [
       { href: "/documents", label: "Documents", icon: FolderOpen },
       { href: "/invoices", label: "Invoices", icon: Receipt },
       { href: "/warranties", label: "Warranties", icon: ShieldCheck },
+      { href: "/certifications", label: "Certifications", icon: FileBadge },
       { href: "/materials", label: "Materials", icon: Layers },
     ],
   },
@@ -61,8 +62,9 @@ export const navGroups: NavGroup[] = [
 // Map is included since "Plan my day" + navigation hand-off is squarely a
 // technician, on-the-phone feature. Properties is included too -- marking a
 // hotel corridor's rooms done/snag/no-access as the day's work happens is
-// exactly the field use case this feature is built for.
-const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/properties", "/calendar", "/map", "/gallery", "/documents"]);
+// exactly the field use case this feature is built for. Certifications is
+// included read-only so a technician can check their own CSCS/DBS expiry.
+const TECHNICIAN_ALLOWED_HREFS = new Set(["/jobs", "/properties", "/certifications", "/calendar", "/map", "/gallery", "/documents"]);
 
 /** Single-role visibility rule that visibleNavGroups() unions across all of a user's roles — most-permissive wins. */
 function roleCanSeeItem(role: Role, item: NavItem): boolean {

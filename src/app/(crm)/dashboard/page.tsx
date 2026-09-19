@@ -14,6 +14,8 @@ import {
   repeatRevenueByMonth,
 } from "@/services/analytics.service";
 import { getLatestInsightReport, getQuickStats } from "@/services/insight.service";
+import { getAlerts, type AlertItem } from "@/services/alerts.service";
+import { AlertsPanel } from "./alerts-panel";
 import { RevenueChart } from "@/components/charts/revenue-chart";
 import { MonthlyJobsChart } from "@/components/charts/monthly-jobs-chart";
 import { LeadConversionChart } from "@/components/charts/lead-conversion-chart";
@@ -39,6 +41,15 @@ async function loadCharts(dbOnline: boolean) {
     return { revenue6, revenue12, jobsMonthly, conversion, colours, products, repeatRevenue };
   } catch {
     return null;
+  }
+}
+
+async function loadAlerts(dbOnline: boolean): Promise<AlertItem[]> {
+  if (!dbOnline) return [];
+  try {
+    return await getAlerts();
+  } catch {
+    return [];
   }
 }
 
@@ -107,6 +118,7 @@ async function loadKpis(): Promise<{ kpis: Kpi[]; dbOnline: boolean }> {
 
 export default async function DashboardPage() {
   const { kpis, dbOnline } = await loadKpis();
+  const alerts = await loadAlerts(dbOnline);
   const charts = await loadCharts(dbOnline);
   const insights = await loadInsightsPanel(dbOnline);
   const aiConfigured = isAiConfigured();
@@ -124,6 +136,8 @@ export default async function DashboardPage() {
           </div>
         )}
       </div>
+
+      {dbOnline && <AlertsPanel alerts={alerts} />}
 
       <div className="grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5">
         {kpis.map((k) => (

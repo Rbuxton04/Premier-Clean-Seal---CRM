@@ -50,6 +50,7 @@ model Organisation {
   insightReports InsightReport[]
   hotelGroups     HotelGroup[]
   hotelProperties HotelProperty[]
+  certifications  Certification[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -94,6 +95,8 @@ model User {
   homeAddress   String?
   homeLatitude  Float?
   homeLongitude Float?
+
+  certifications Certification[]
 }
 
 model Permission {
@@ -765,6 +768,58 @@ model PendingAITask {
   attempts  Int      @default(0)
   lastError String?
   createdAt DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// Certifications & records (insurance, CSCS, DBS, accreditations, training)
+// ---------------------------------------------------------------------------
+
+enum CertOwnerType {
+  BUSINESS
+  PERSON
+}
+
+model Certification {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  name     String
+  // Plain String, not a Postgres enum -- deliberately kept flexible/
+  // extendable per the brief. src/validators/certification.ts curates a
+  // suggestion list (INSURANCE, CSCS, DBS, ACCREDITATION, TRAINING, OTHER)
+  // for the picker, same pattern as MediaFile.category's document
+  // categories in validators/media.ts, but any free text is accepted so a
+  // new category never needs a migration.
+  category String
+
+  ownerType CertOwnerType
+  // Required when ownerType is PERSON, null when BUSINESS -- enforced in
+  // certificationSchema.refine() at the application layer, since Prisma
+  // can't express "required when a sibling column has value X" at the DB
+  // level.
+  userId String?
+  user   User?   @relation(fields: [userId], references: [id])
+
+  issueDate  DateTime?
+  expiryDate DateTime
+  reference  String?
+  // Storage path in the private bucket (SUPABASE_STORAGE_BUCKET), resolved
+  // to a signed URL at read time -- see resolveFileUrl in
+  // certification.service.ts, same pattern as MediaFile.url in
+  // media.service.ts.
+  fileUrl String?
+  notes   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Soft delete -- mirrors Customer.deletedAt / Job.deletedAt. Admin-only,
+  // confirmed, per the brief -- enforced in the delete action, not here.
+  deletedAt   DateTime?
+  deletedById String?
+
+  @@index([organisationId, expiryDate])
+  @@index([organisationId, deletedAt])
 }
 
 // ---------------------------------------------------------------------------
