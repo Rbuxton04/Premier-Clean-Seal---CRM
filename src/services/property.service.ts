@@ -54,7 +54,7 @@ export type ProductOption = { id: string; manufacturer: string; name: string; co
 
 export async function listProductOptions(): Promise<ProductOption[]> {
   const rows = await db.product.findMany({
-    where: { organisationId: ORG_ID },
+    where: { organisationId: ORG_ID, deletedAt: null },
     select: { id: true, manufacturer: true, name: true, colour: true },
     orderBy: [{ manufacturer: "asc" }, { name: "asc" }, { colour: "asc" }],
   });

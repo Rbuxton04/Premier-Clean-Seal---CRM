@@ -501,10 +501,35 @@ model Product {
   attributes     String[] // FIRE_RATED, NEUTRAL_CURE, ACOUSTIC, LMN, SANITARY
   supplier       String?
   unitCost       Decimal? @db.Decimal(10, 2)
+  // Optional stock-keeping code / SKU -- free text, no uniqueness enforced
+  // (some suppliers don't provide one).
+  sku String?
+
+  // Stock/inventory (Materials hub). Decimal, not Int, to match
+  // MaterialUsage.quantityUsed's precision -- a delivery or a job can use a
+  // fractional number of tubes. stockQuantity is allowed to go negative
+  // (see decrementStockForUsage in materials.service.ts) rather than being
+  // silently clamped at 0, so an over-use is visible as a flagged negative
+  // rather than hidden.
+  stockQuantity Decimal @default(0) @db.Decimal(10, 2)
+  stockUnit     String  @default("tubes")
+  // Null = no low-stock tracking for this product. Compared against
+  // stockQuantity in materials.service.ts, not at the DB level (Prisma
+  // can't express a cross-column comparison in `where`).
+  lowStockThreshold Decimal? @db.Decimal(10, 2)
+
   usages         MaterialUsage[]
   workLogEntries PropertyWorkLog[]
 
+  // Soft delete -- mirrors Customer.deletedAt / Job.deletedAt. Never
+  // cascades: historical MaterialUsage/PropertyWorkLog rows keep their
+  // product reference and stay fully readable after a product is retired
+  // from the catalogue.
+  deletedAt   DateTime?
+  deletedById String?
+
   @@index([organisationId, manufacturer, name, colour])
+  @@index([organisationId, deletedAt])
 }
 
 enum ApplicationArea {

@@ -6,6 +6,7 @@ import { renderWarrantyPdfBuffer } from "@/lib/pdf/warranty-pdf";
 import { renderInvoicePdfBuffer } from "@/lib/pdf/invoice-pdf";
 import { applicationAreaLabels } from "@/validators/completion";
 import type { CompletionInput } from "@/validators/completion";
+import { decrementStockForUsage } from "@/services/materials.service";
 
 function addMonths(d: Date, months: number): Date {
   const result = new Date(d);
@@ -68,6 +69,22 @@ export async function finishJob(jobId: string, input: CompletionInput): Promise<
       cost: m.cost ?? null,
     })),
   });
+
+  // Auto-decrement stock for what was just recorded as used. Safe against
+  // double-counting: the completion page (jobs/[id]/complete/page.tsx)
+  // already redirects away from the wizard once a job is COMPLETED, so
+  // finishJob only ever runs once per job under normal navigation. Each
+  // decrement is independently best-effort -- a stock-tracking failure on
+  // one product must never block the job from completing, so a thrown
+  // error here is swallowed rather than propagated (manual stock
+  // adjustment on the Materials page remains the reliable fallback).
+  await Promise.all(
+    resolvedMaterials.map((m) =>
+      decrementStockForUsage(m.productId, m.quantityUsed).catch((err) => {
+        console.error(`Stock decrement failed for product ${m.productId} on job ${jobId}`, err);
+      })
+    )
+  );
 
   const signatureUrl: string | null = input.signatureUrl ?? null;
   if (signatureUrl) {

@@ -22,26 +22,36 @@ async function main() {
     },
   });
 
-  // Starter silicone product catalogue
+  // Starter silicone product catalogue. Stock/pricing fields are only ever
+  // applied on first CREATE below (never on an existing row), so re-running
+  // this on redeploy can't clobber a real stock count or delivery someone
+  // has since recorded -- see the Materials hub brief's idempotent-seed
+  // requirement. A few rows start at or under their threshold deliberately,
+  // so the low-stock badge/panel has something to show on first look.
   const products: Array<{
     manufacturer: string;
     name: string;
     colour: string;
     attributes: string[];
+    sku: string;
+    unitCost: number;
+    stockQuantity: number;
+    stockUnit: string;
+    lowStockThreshold: number;
   }> = [
-    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "White", attributes: ["SANITARY", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Jasmine White", attributes: ["SANITARY", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Ivory", attributes: ["SANITARY", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Grey", attributes: ["SANITARY", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Anthracite", attributes: ["SANITARY", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Black", attributes: ["SANITARY", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "791 Weatherproofing", colour: "White", attributes: ["EXTERNAL", "NEUTRAL_CURE"] },
-    { manufacturer: "Dow", name: "791 Weatherproofing", colour: "Anthracite Grey", attributes: ["EXTERNAL", "NEUTRAL_CURE"] },
-    { manufacturer: "Sika", name: "Sikasil C", colour: "White", attributes: ["SANITARY"] },
-    { manufacturer: "Mapei", name: "Mapesil AC", colour: "Manhattan 2000", attributes: ["SANITARY"] },
-    { manufacturer: "Everbuild", name: "Firemate Intumescent", colour: "White", attributes: ["FIRE_RATED"] },
-    { manufacturer: "Everbuild", name: "AC50 Acoustic", colour: "White", attributes: ["ACOUSTIC"] },
-    { manufacturer: "Soudal", name: "Silirub LMN", colour: "Clear", attributes: ["LMN", "NEUTRAL_CURE"] },
+    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "White", attributes: ["SANITARY", "NEUTRAL_CURE"], sku: "DOW785-WHT", unitCost: 6.50, stockQuantity: 24, stockUnit: "tubes", lowStockThreshold: 8 },
+    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Jasmine White", attributes: ["SANITARY", "NEUTRAL_CURE"], sku: "DOW785-JWH", unitCost: 6.50, stockQuantity: 18, stockUnit: "tubes", lowStockThreshold: 8 },
+    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Ivory", attributes: ["SANITARY", "NEUTRAL_CURE"], sku: "DOW785-IVY", unitCost: 6.50, stockQuantity: 6, stockUnit: "tubes", lowStockThreshold: 8 },
+    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Grey", attributes: ["SANITARY", "NEUTRAL_CURE"], sku: "DOW785-GRY", unitCost: 6.50, stockQuantity: 15, stockUnit: "tubes", lowStockThreshold: 8 },
+    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Anthracite", attributes: ["SANITARY", "NEUTRAL_CURE"], sku: "DOW785-ANT", unitCost: 6.75, stockQuantity: 20, stockUnit: "tubes", lowStockThreshold: 8 },
+    { manufacturer: "Dow", name: "785+ Bacteria Resistant", colour: "Black", attributes: ["SANITARY", "NEUTRAL_CURE"], sku: "DOW785-BLK", unitCost: 6.75, stockQuantity: 3, stockUnit: "tubes", lowStockThreshold: 8 },
+    { manufacturer: "Dow", name: "791 Weatherproofing", colour: "White", attributes: ["EXTERNAL", "NEUTRAL_CURE"], sku: "DOW791-WHT", unitCost: 7.20, stockQuantity: 12, stockUnit: "tubes", lowStockThreshold: 6 },
+    { manufacturer: "Dow", name: "791 Weatherproofing", colour: "Anthracite Grey", attributes: ["EXTERNAL", "NEUTRAL_CURE"], sku: "DOW791-ANT", unitCost: 7.20, stockQuantity: 10, stockUnit: "tubes", lowStockThreshold: 6 },
+    { manufacturer: "Sika", name: "Sikasil C", colour: "White", attributes: ["SANITARY"], sku: "SIKA-C-WHT", unitCost: 5.80, stockQuantity: 30, stockUnit: "tubes", lowStockThreshold: 10 },
+    { manufacturer: "Mapei", name: "Mapesil AC", colour: "Manhattan 2000", attributes: ["SANITARY"], sku: "MAP-AC-MAN", unitCost: 8.40, stockQuantity: 14, stockUnit: "tubes", lowStockThreshold: 6 },
+    { manufacturer: "Everbuild", name: "Firemate Intumescent", colour: "White", attributes: ["FIRE_RATED"], sku: "EB-FIRE-WHT", unitCost: 9.10, stockQuantity: 2, stockUnit: "tubes", lowStockThreshold: 5 },
+    { manufacturer: "Everbuild", name: "AC50 Acoustic", colour: "White", attributes: ["ACOUSTIC"], sku: "EB-AC50-WHT", unitCost: 8.90, stockQuantity: 16, stockUnit: "tubes", lowStockThreshold: 6 },
+    { manufacturer: "Soudal", name: "Silirub LMN", colour: "Clear", attributes: ["LMN", "NEUTRAL_CURE"], sku: "SOU-LMN-CLR", unitCost: 11.50, stockQuantity: 9, stockUnit: "tubes", lowStockThreshold: 6 },
   ];
 
   for (const p of products) {

@@ -41,7 +41,7 @@ export async function runEnquiryAnalysis(enquiryId: string): Promise<RunAnalysis
   });
 
   const products = await db.product.findMany({
-    where: { organisationId: enquiry.organisationId },
+    where: { organisationId: enquiry.organisationId, deletedAt: null },
     select: { manufacturer: true, name: true, colour: true, attributes: true },
   });
 
