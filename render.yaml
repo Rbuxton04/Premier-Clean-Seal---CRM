@@ -3,15 +3,14 @@ services:
     name: premier-crm
     runtime: node
     plan: free
-    # migrate deploy applies prisma/migrations/ in order (currently just the
-    # Property & Room Tracker migration -- everything before it was pushed
-    # directly, so there's no earlier history to reconcile). It only ever
-    # runs pending migration files forward, never resets or diffs against
-    # drift, so it's safe to run ahead of the pre-existing db push, which
-    # keeps handling any schema.prisma change that isn't captured as a
-    # migration yet -- ordering the two this way means neither step can
-    # clobber the other.
-    buildCommand: npm install --legacy-peer-deps && npx prisma migrate deploy && npx prisma db push --accept-data-loss && npm run db:seed && npm run build
+    # Schema changes now go through migration files ONLY -- db push has been
+    # removed from this build. migrate deploy applies prisma/migrations/ in
+    # order and never resets or diffs against drift, so every schema change
+    # from here on must ship as a hand-written, timestamped SQL file under
+    # prisma/migrations (see docs/DATABASE_CHANGES.md for the required
+    # process); there is no more db push step to fall back on if a change
+    # was only made in schema.prisma.
+    buildCommand: npm install --legacy-peer-deps && npx prisma migrate deploy && npm run db:seed && npm run build
     startCommand: npm run start
     envVars:
       - key: DATABASE_URL

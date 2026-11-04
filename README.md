@@ -30,11 +30,15 @@ Requirements: Node 20+, PostgreSQL (local, Docker, or Render).
 
 ```bash
 npm install
-cp .env.example .env        # fill in DATABASE_URL at minimum
-npx prisma migrate dev      # creates the schema
+cp .env.example .env        # fill in DATABASE_URL at minimum (a new, empty local database)
+npx prisma db push          # creates the schema
 npm run db:seed             # seeds Premier Clean & Seal org + product catalogue
 npm run dev                 # http://localhost:3000
 ```
+
+For any schema change after this point (including on an existing local
+database), see [`docs/DATABASE_CHANGES.md`](docs/DATABASE_CHANGES.md) --
+`prisma migrate dev` is not used in this project.
 
 **No Clerk keys yet?** The app runs in *open dev mode* (a yellow badge shows in the top bar)
 so you can explore immediately. To enable real sign-in: create a free app at clerk.com,

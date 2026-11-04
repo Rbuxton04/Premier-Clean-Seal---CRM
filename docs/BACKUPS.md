@@ -43,16 +43,31 @@ backup you can trust.
    `src/lib/storage/supabase.ts` from a one-off script).
 2. Decompress it: `gunzip db-backup-<timestamp>.json.gz`.
 3. The result is one JSON document with a top-level key per table
-   (`customers`, `quotes`, `jobs`, `invoices`, `mediaFiles`, ...), each an
-   array of the rows Prisma would return from `findMany()`.
+   (`customers`, `quotes`, `jobs`, `invoices`, `mediaFiles`, `hotelGroups`,
+   `hotelProperties`, `rooms`, `roomVisits`, `roomVisitPhotos`,
+   `certifications`, ...), each an array of the rows Prisma would return
+   from `findMany()` — plus one special key, `customerTags` (see below).
 4. To actually restore into a scratch database: spin up a throwaway Postgres
-   (e.g. a local Docker container or a new free Render Postgres), run
-   `npx prisma db push` against it to create the schema, then write a small
+   (e.g. a local Docker container or a new free Render Postgres) — confirm
+   its URL points to localhost/a disposable instance, never a real
+   database — run `npx prisma db push` against it to create the schema
+   (fine here: this is a throwaway target, not the real database that
+   `docs/DATABASE_CHANGES.md` bans `db push` against), then write a small
    script that reads the JSON and calls `db.<model>.createMany({ data: ... })`
    per table, in an order that respects foreign keys (organisations and
    users first, then customers, then everything that references them).
-5. Confirm row counts match the original and spot-check a customer record
-   end to end (profile, properties, a quote, a job).
+5. Restore customer tags last, once both customers and tags exist.
+   `customerTags` isn't a table — it's the implicit Customer<->Tag join
+   (`@relation("CustomerTags")` in `schema.prisma`), captured in the backup
+   as `{ customerId, tagIds }` pairs since Prisma has no `findMany()` for an
+   implicit join table directly. Restore it by looping the array and calling
+   `db.customer.update({ where: { id: customerId }, data: { tags: { connect: tagIds.map((id) => ({ id })) } } })`
+   for each entry.
+6. `WeatherCache` is deliberately not in the backup (see the comment in
+   `snapshotAllTables()`) — it's just a geocoded-forecast cache, not
+   business data, and repopulates itself as the map/calendar views run.
+7. Confirm row counts match the original and spot-check a customer record
+   end to end (profile, properties, a quote, a job, its tags).
 
 ## What this doesn't cover
 

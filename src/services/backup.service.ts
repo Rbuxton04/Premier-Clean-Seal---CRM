@@ -19,6 +19,11 @@ async function snapshotAllTables() {
     enquiries, aiAnalyses, quotes, quoteLineItems, jobs, materialUsages, products,
     mediaFiles, warranties, invoices, reminders, campaigns, timelineEvents,
     communications, healthScores, insightReports, auditLogs, portalTokens, pendingAiTasks,
+    hotelGroups, hotelProperties, rooms, roomVisits, roomVisitPhotos, certifications,
+    customerTagRows,
+    // WeatherCache is deliberately left out -- it's only a geocoded-forecast
+    // cache (keyed by lat/lng/date, not org-scoped), not business data, and
+    // is cheap to re-fetch if ever needed, so it isn't worth including here.
   ] = await db.$transaction([
     db.organisation.findMany(),
     db.user.findMany(),
@@ -46,7 +51,20 @@ async function snapshotAllTables() {
     db.auditLog.findMany(),
     db.portalToken.findMany(),
     db.pendingAITask.findMany(),
+    db.hotelGroup.findMany(),
+    db.hotelProperty.findMany(),
+    db.room.findMany(),
+    db.roomVisit.findMany(),
+    db.roomVisitPhoto.findMany(),
+    db.certification.findMany(),
+    // The Customer<->Tag link is an implicit many-to-many join table (see
+    // the @relation("CustomerTags") on Customer.tags / Tag.customers in
+    // schema.prisma) -- Prisma has no findMany() for it directly, so it's
+    // captured here as each customer's id plus its tag ids instead.
+    db.customer.findMany({ select: { id: true, tags: { select: { id: true } } } }),
   ]);
+
+  const customerTags = customerTagRows.map((c) => ({ customerId: c.id, tagIds: c.tags.map((t) => t.id) }));
 
   return {
     takenAt: new Date().toISOString(),
@@ -54,6 +72,8 @@ async function snapshotAllTables() {
     enquiries, aiAnalyses, quotes, quoteLineItems, jobs, materialUsages, products,
     mediaFiles, warranties, invoices, reminders, campaigns, timelineEvents,
     communications, healthScores, insightReports, auditLogs, portalTokens, pendingAiTasks,
+    hotelGroups, hotelProperties, rooms, roomVisits, roomVisitPhotos, certifications,
+    customerTags,
   };
 }
 
