@@ -65,7 +65,7 @@ export async function computeReadiness(): Promise<ReadinessItem[]> {
       label: "Daily backups",
       status: "amber",
       detail: "Storage isn't configured, so the backup cron no-ops.",
-      howToFix: "Set NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET, then add the Render Cron Job from render.yaml.",
+      howToFix: "Set NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, SUPABASE_STORAGE_BUCKET, then deploy the premier-crm-daily-cron job from render.yaml.",
     });
   } else if (!lastBackupAt) {
     items.push({
@@ -73,7 +73,7 @@ export async function computeReadiness(): Promise<ReadinessItem[]> {
       label: "Daily backups",
       status: "amber",
       detail: "Storage is configured but no backup has run yet.",
-      howToFix: "Confirm the Render Cron Job (premier-crm-backup-cron) is deployed and has APP_URL + CRON_SECRET set.",
+      howToFix: "Confirm the Render Cron Job (premier-crm-daily-cron) is deployed and has APP_URL + CRON_SECRET set.",
     });
   } else {
     const ageHours = (Date.now() - lastBackupAt.getTime()) / (60 * 60 * 1000);
@@ -107,7 +107,7 @@ export async function computeReadiness(): Promise<ReadinessItem[]> {
   items.push(
     cronSecretSet
       ? { id: "cron-secret", label: "Cron secret", status: "green", detail: "CRON_SECRET has been changed from the default." }
-      : { id: "cron-secret", label: "Cron secret", status: "red", detail: "CRON_SECRET is unset or still the placeholder value — cron endpoints aren't properly protected.", howToFix: "Set a strong random CRON_SECRET on both the web service and the cron jobs." }
+      : { id: "cron-secret", label: "Cron secret", status: "red", detail: "CRON_SECRET is unset or still the placeholder value — cron endpoints aren't properly protected.", howToFix: "Set a strong random CRON_SECRET on both the web service and the premier-crm-daily-cron job -- the same value on both." }
   );
 
   items.push({

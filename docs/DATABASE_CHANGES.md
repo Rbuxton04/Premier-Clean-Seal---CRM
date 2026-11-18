@@ -59,6 +59,29 @@ Test against a throwaway local database only — never the real one.
      migration and `schema.prisma` don't actually agree — fix one or the
      other and re-run until the diff is empty.
 
+## Baseline (one-off, Milestone 0B)
+
+`scripts/baseline-migrations.mjs` runs at the start of every build, before
+`migrate deploy`. It exists for exactly one historical gap: the
+`20260903215150_add_property_room_tracker` migration's tables were created
+on production by `prisma db push`, before this project switched to
+migration-only deploys (Milestone 0A) -- so production's
+`_prisma_migrations` table had no row for it, and `migrate deploy` would
+otherwise try to re-run its `CREATE TABLE` statements and fail.
+
+The script checks, in order: is that one migration already recorded as
+applied (nothing to do); if not, does the `HotelGroup` table already exist
+(proof `db push` created it) -- if so, mark it applied via
+`prisma migrate resolve --applied` (bookkeeping only, no schema or data
+change) and stop there; if neither, do nothing and let `migrate deploy`
+create it normally. It is a no-op once the gap is closed, so it's safe to
+leave in the build forever.
+
+**Never add another migration name to this script.** It handles exactly
+the one named gap above. Every migration added from now on is applied
+normally by `prisma migrate deploy` with no baselining needed, because it
+will have been created by a real migration file from the start.
+
 ## How it reaches production
 
 Nothing above touches the real database. The only path a schema change

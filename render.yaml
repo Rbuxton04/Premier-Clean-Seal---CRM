@@ -1,91 +1,66 @@
 services:
   - type: web
-    name: premier-crm
+    # Must match the live service name exactly (Render dashboard), or a
+    # Blueprint sync creates a second web service instead of updating this
+    # one. The live service was originally created outside this file (hence
+    # the "-m6y8" suffix Render appended) -- never rename this back to
+    # "premier-crm" without renaming the live service to match first.
+    name: premier-crm-m6y8
     runtime: node
+    # Matches the live dashboard plan. If the web service is ever upgraded
+    # to Starter in the dashboard, change this to "starter" in the SAME
+    # week -- otherwise the next Blueprint sync reads this file and moves
+    # the live service back to free.
     plan: free
-    # Schema changes now go through migration files ONLY -- db push has been
-    # removed from this build. migrate deploy applies prisma/migrations/ in
-    # order and never resets or diffs against drift, so every schema change
-    # from here on must ship as a hand-written, timestamped SQL file under
-    # prisma/migrations (see docs/DATABASE_CHANGES.md for the required
-    # process); there is no more db push step to fall back on if a change
-    # was only made in schema.prisma.
-    buildCommand: npm install --legacy-peer-deps && npx prisma migrate deploy && npm run db:seed && npm run build
+    # db:baseline runs first and is a one-off, idempotent no-op once the
+    # historical gap it exists for is fixed -- see docs/DATABASE_CHANGES.md
+    # ("Baseline (one-off, Milestone 0B)") and scripts/baseline-migrations.mjs.
+    # migrate deploy then applies anything new; there is no db push step to
+    # fall back on, so every schema change must ship as a migration file.
+    buildCommand: npm install --legacy-peer-deps && npm run db:baseline && npx prisma migrate deploy && npm run db:seed && npm run build
     startCommand: npm run start
     envVars:
+      # The real database is Supabase Postgres (session pooler), set by
+      # hand in the Render dashboard -- NEVER declare a `databases:` block
+      # or a `fromDatabase` reference in this file. A Blueprint sync that
+      # saw either would try to point DATABASE_URL at a new, empty Render
+      # Postgres instance instead, which would be catastrophic. sync: false
+      # means a sync can propose this key but never overwrite its value.
       - key: DATABASE_URL
-        fromDatabase: { name: premier-crm-db, property: connectionString }
+        sync: false
       - key: NODE_VERSION
         value: 20.17.0
       # The web service is what actually generates every emailed link (quote
       # approval, customer portal, unsubscribe) via src/lib/url.ts -- this
-      # must be set here, not just on the cron jobs below, or those links
+      # must be set here, not just on the cron job below, or those links
       # fall back to http://localhost:3000. Set to this service's live URL
       # after first deploy (or a custom domain later).
       - key: APP_URL
         sync: false
+      # The cron job's requests to /api/cron/* are checked against THIS
+      # service's CRON_SECRET, so it must be set here too, not only on the
+      # cron job -- same strong random value on both.
+      - key: CRON_SECRET
+        sync: false
 
-  # Milestone 8: the free web service above sleeps when idle, so a scheduled
-  # Render Cron Job POSTs to /api/cron/marketing every morning instead of
-  # relying on an in-process scheduler. After both services first deploy, set
-  # APP_URL to the web service's live URL and CRON_SECRET to the same value
-  # configured on the web service (Render dashboard -> this cron job ->
-  # Environment), then this fires daily at 08:00 UTC.
+  # Milestone 0B: one paid cron job instead of three free ones -- Render has
+  # no free plan for cron services, which is why the Blueprint stopped
+  # syncing at all (see docs/DATABASE_CHANGES.md). Fires once a day; the
+  # daily backup and marketing-reminder sweep run every day, and the weekly
+  # insights report runs only when that day is a Monday -- see
+  # scripts/run-crons.mjs, which calls all three endpoints in order.
   - type: cron
-    name: premier-crm-marketing-cron
+    name: premier-crm-daily-cron
     runtime: node
-    plan: free
+    plan: starter
     schedule: "0 8 * * *"
     buildCommand: echo "no build needed"
-    startCommand: >-
-      node -e "fetch(process.env.APP_URL + '/api/cron/marketing', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } }).then(r => r.text()).then(t => { console.log(t); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })"
+    startCommand: node scripts/run-crons.mjs
     envVars:
       - key: NODE_VERSION
         value: 20.17.0
       - key: APP_URL
         sync: false
+      # Must be set to the SAME value as the web service's CRON_SECRET.
       - key: CRON_SECRET
         sync: false
-
-  # Milestone 9: weekly AI business insight report, same CRON_SECRET pattern
-  # as the marketing cron above. Fires Monday mornings; set APP_URL and
-  # CRON_SECRET the same way once both services are live.
-  - type: cron
-    name: premier-crm-insights-cron
-    runtime: node
-    plan: free
-    schedule: "0 7 * * 1"
-    buildCommand: echo "no build needed"
-    startCommand: >-
-      node -e "fetch(process.env.APP_URL + '/api/cron/insights', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } }).then(r => r.text()).then(t => { console.log(t); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })"
-    envVars:
-      - key: NODE_VERSION
-        value: 20.17.0
-      - key: APP_URL
-        sync: false
-      - key: CRON_SECRET
-        sync: false
-
-  # Milestone 12: daily logical database backup to Supabase Storage, same
-  # CRON_SECRET pattern as the crons above. No-ops gracefully (logs a
-  # warning, doesn't fail) if the Supabase Storage env vars aren't set on
-  # the web service yet.
-  - type: cron
-    name: premier-crm-backup-cron
-    runtime: node
-    plan: free
-    schedule: "0 3 * * *"
-    buildCommand: echo "no build needed"
-    startCommand: >-
-      node -e "fetch(process.env.APP_URL + '/api/cron/backup', { method: 'POST', headers: { 'x-cron-secret': process.env.CRON_SECRET } }).then(r => r.text()).then(t => { console.log(t); process.exit(0); }).catch(e => { console.error(e); process.exit(1); })"
-    envVars:
-      - key: NODE_VERSION
-        value: 20.17.0
-      - key: APP_URL
-        sync: false
-      - key: CRON_SECRET
-        sync: false
-
-databases:
-  - name: premier-crm-db
-    plan: free

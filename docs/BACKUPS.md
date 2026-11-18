@@ -2,9 +2,11 @@
 
 ## How it works
 
-A Render Cron Job (`premier-crm-backup-cron` in `render.yaml`) POSTs to
-`/api/cron/backup` once a day at 03:00 UTC with the `x-cron-secret` header.
-That route (`src/app/api/cron/backup/route.ts`) calls `runBackup()`
+A Render Cron Job (`premier-crm-daily-cron` in `render.yaml`) fires once a
+day at 08:00 UTC and runs `scripts/run-crons.mjs`, which POSTs to
+`/api/cron/backup` (first, before marketing and -- on Mondays -- insights)
+with the `x-cron-secret` header. That route
+(`src/app/api/cron/backup/route.ts`) calls `runBackup()`
 (`src/services/backup.service.ts`), which:
 
 1. Reads every row of every application table via Prisma (a *logical* export,
@@ -26,12 +28,13 @@ the cron.
 
 1. Deploy the web service with `NEXT_PUBLIC_SUPABASE_URL`,
    `SUPABASE_SERVICE_ROLE_KEY`, `SUPABASE_STORAGE_BUCKET` set.
-2. Deploy `premier-crm-backup-cron` from `render.yaml`.
+2. Deploy `premier-crm-daily-cron` from `render.yaml`.
 3. On the cron job, set `APP_URL` to the web service's live URL and
    `CRON_SECRET` to the same value configured on the web service.
-4. Trigger a manual run from the Render dashboard (or wait for 03:00 UTC) and
+4. Trigger a manual run from the Render dashboard (or wait for 08:00 UTC) and
    confirm a `backups/db-backup-*.json.gz` object appears in the Supabase
-   Storage bucket.
+   Storage bucket. The same run also calls the marketing-reminder endpoint,
+   and the insights endpoint on Mondays -- see `scripts/run-crons.mjs`.
 
 ## Restore drill
 

@@ -8,6 +8,7 @@
     "start": "next start",
     "db:push": "prisma db push",
     "db:migrate:deploy": "prisma migrate deploy",
+    "db:baseline": "node scripts/baseline-migrations.mjs",
     "db:seed": "tsx prisma/seed.ts",
     "db:studio": "prisma studio"
   },

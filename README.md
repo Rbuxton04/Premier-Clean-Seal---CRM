@@ -106,19 +106,36 @@ a formal qualified e-signature service.
 - **Deposit payment is a stub.** The approval page shows the deposit amount with a disabled
   "Pay deposit" button — real card payment needs Stripe (or another PSP), a later milestone.
 
-## Deploying to Render (free tier)
+## Deploying to Render
 
-1. Push this repo to GitHub.
-2. In Render: **New → Blueprint**, point it at the repo — `render.yaml` provisions the web
-   service and a free PostgreSQL instance, and runs migrations on deploy.
-3. Add environment variables in the Render dashboard (Clerk keys, `CRON_SECRET`, `APP_URL`).
-4. Seeding runs automatically on every deploy (it's idempotent — safe to re-run).
+The live setup is two Render services; `render.yaml` declares no database:
 
-Free-tier notes: the service sleeps after ~15 min idle (first request is slow); the free
-Postgres database **expires 30 days after creation** (14-day grace period to upgrade before
-Render deletes it and all data) — set a reminder and upgrade to the small paid tier (~£5–6/mo)
-before day 30 if you're keeping real data in it. All uploads
-will live on Supabase Storage, never on the Render disk.
+- **`premier-crm-m6y8`** (web service, free plan) — the app itself. Build:
+  install deps, run the one-off migration baseline (see
+  `docs/DATABASE_CHANGES.md`), apply pending migrations, seed, build.
+- **`premier-crm-daily-cron`** (cron job, Starter plan — Render has no free
+  cron plan) — fires once a day at 08:00 UTC and calls the backup and
+  marketing-reminder endpoints every day, plus the weekly insights endpoint
+  on Mondays (`scripts/run-crons.mjs`).
+
+**The database is Supabase Postgres, not a Render database.** `render.yaml`
+deliberately declares no `databases:` block and no `fromDatabase`
+reference, so a Blueprint sync can never try to replace it with a new,
+empty Render database.
+
+These are set by hand in the Render dashboard (`sync: false` in
+`render.yaml`, so a Blueprint sync proposes them but never overwrites an
+existing value):
+- Web service: `DATABASE_URL` (the Supabase connection string), `APP_URL`
+  (this service's live URL), `CRON_SECRET` (a strong random value), plus
+  Clerk/Supabase Storage/Resend/Mapbox/AI keys as described above.
+- Cron job: `APP_URL` and `CRON_SECRET` — the **same** `CRON_SECRET` value
+  as the web service, since the cron routes check requests against it.
+
+Free-tier notes: the web service sleeps after ~15 min idle (first request
+after that is slow — `scripts/run-crons.mjs` retries once to cover a cold
+start); Supabase's own free-tier policy governs the database, not
+Render's.
 
 ## Backups
 
