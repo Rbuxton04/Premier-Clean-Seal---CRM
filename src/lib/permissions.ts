@@ -11,6 +11,7 @@ export type Resource =
   | "jobs"
   | "properties"
   | "certifications"
+  | "takeoffs"
   | "invoices"
   | "financials"
   | "materials"
@@ -45,6 +46,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     // action itself (same real convention as Job/Customer delete), so
     // "delete" is deliberately absent here even for OFFICE.
     certifications: ["read", "create", "update"],
+    takeoffs: ["read", "create", "update", "delete"],
     invoices: ["read", "create", "update"],
     financials: ["read"],
     materials: ["read", "create", "update", "delete"],
@@ -63,6 +65,9 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     // Read-only -- a return-visit quote needs the property's sealant/price
     // history, but setting up hotel groups/rooms is an office task.
     properties: ["read"],
+    // The measuring/estimating tool is squarely an estimator's job --
+    // full access, same as quotes above.
+    takeoffs: ["read", "create", "update", "delete"],
     financials: ["read"],
     materials: ["read"],
     gallery: ["read", "create"],
@@ -96,6 +101,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     jobs: ["read"],
     properties: ["read"],
     certifications: ["read"],
+    takeoffs: ["read"],
     invoices: ["read"],
     financials: ["read"],
     materials: ["read"],

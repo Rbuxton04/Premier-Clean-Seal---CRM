@@ -1,6 +1,6 @@
 import {
   LayoutDashboard, Inbox, Users, FileText, Wrench, CalendarDays,
-  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Map, PoundSterling, Building2, FileBadge,
+  Images, FolderOpen, Layers, Receipt, ShieldCheck, Megaphone, Sparkles, Search, Map, PoundSterling, Building2, FileBadge, Ruler,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { Role } from "@prisma/client";
@@ -21,6 +21,7 @@ export const navGroups: NavGroup[] = [
       { href: "/enquiries", label: "Enquiries", icon: Inbox },
       { href: "/customers", label: "Customers", icon: Users },
       { href: "/quotes", label: "Quotes", icon: FileText },
+      { href: "/measure", label: "Measure", icon: Ruler },
     ],
   },
   {

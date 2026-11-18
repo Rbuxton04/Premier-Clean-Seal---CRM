@@ -48,8 +48,13 @@ backup you can trust.
 3. The result is one JSON document with a top-level key per table
    (`customers`, `quotes`, `jobs`, `invoices`, `mediaFiles`, `hotelGroups`,
    `hotelProperties`, `rooms`, `roomVisits`, `roomVisitPhotos`,
-   `certifications`, ...), each an array of the rows Prisma would return
-   from `findMany()` — plus one special key, `customerTags` (see below).
+   `certifications`, `scalePresets`, `takeoffs`, `takeoffItems`,
+   `takeoffMeasurements`, ...), each an array of the rows Prisma would
+   return from `findMany()` — plus one special key, `customerTags` (see
+   below). Restore `takeoffs` before `takeoffItems` before
+   `takeoffMeasurements` (each references the one before it by id), same
+   as `hotelGroups` before `hotelProperties` before `rooms` before
+   `roomVisits` before `roomVisitPhotos`.
 4. To actually restore into a scratch database: spin up a throwaway Postgres
    (e.g. a local Docker container or a new free Render Postgres) — confirm
    its URL points to localhost/a disposable instance, never a real

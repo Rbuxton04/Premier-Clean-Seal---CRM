@@ -5,6 +5,7 @@ import { redirect } from "next/navigation";
 import { quoteFormSchema } from "@/validators/quote";
 import * as QuoteService from "@/services/quote.service";
 import * as JobService from "@/services/job.service";
+import { linkTakeoffToQuote } from "@/services/takeoff.service";
 import type { SendQuoteResult } from "@/services/quote.service";
 import type { ConvertToJobResult } from "@/services/job.service";
 import { writeAudit, actorContext } from "@/lib/audit";
@@ -44,6 +45,17 @@ export async function createQuoteAction(_prev: QuoteFormState, formData: FormDat
   const quote = await QuoteService.createQuote(parsed.data);
   const { userId, ip } = await actorContext();
   await writeAudit({ userId, action: "CREATE", resource: "quote", resourceId: quote.id, after: { customerId: parsed.data.customerId }, ip });
+
+  // Set only when this quote was created from the measuring tool's "Create
+  // quote from takeoff" action (see QuoteBuilder's takeoffId prop) -- links
+  // the two records both ways and backfills the takeoff's customer if it
+  // didn't have one yet.
+  const takeoffId = formData.get("takeoffId");
+  if (takeoffId) {
+    await linkTakeoffToQuote(String(takeoffId), quote.id, parsed.data.customerId);
+    revalidatePath(`/measure/${takeoffId}`);
+  }
+
   revalidatePath("/quotes");
   redirect(`/quotes/${quote.id}`);
 }

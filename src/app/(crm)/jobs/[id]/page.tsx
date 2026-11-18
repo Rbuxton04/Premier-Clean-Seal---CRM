@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
-import { ArrowLeft, CheckCircle2, FolderOpen, Images, Receipt, ShieldCheck, Wrench } from "lucide-react";
+import { ArrowLeft, CheckCircle2, FolderOpen, Images, Receipt, ShieldCheck, Wrench, Ruler } from "lucide-react";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
@@ -222,9 +222,12 @@ export default async function JobDetailPage({ params }: { params: { id: string }
 
           <Card>
             <CardHeader><CardTitle className="text-base">Documents</CardTitle></CardHeader>
-            <CardContent>
+            <CardContent className="space-y-2">
               <Link href={`/documents?jobId=${job.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
                 <FolderOpen className="h-4 w-4" /> View documents &amp; certificates
+              </Link>
+              <Link href={`/measure/new?customerId=${job.customer.id}&jobId=${job.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                <Ruler className="h-4 w-4" /> Measure a plan
               </Link>
             </CardContent>
           </Card>

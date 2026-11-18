@@ -2,18 +2,21 @@
 
 import { useState, useTransition } from "react";
 import { useRouter } from "next/navigation";
-import { Send, FileDown, Wrench, Copy, Check } from "lucide-react";
+import { Send, FileDown, Wrench, Copy, Check, Ruler } from "lucide-react";
+import Link from "next/link";
 import { Button } from "@/components/ui/button";
 import { sendQuoteAction, convertToJobAction } from "../actions";
 import type { SendQuoteResult } from "@/services/quote.service";
 
 export function QuoteActions({
   quoteId,
+  customerId,
   status,
   pdfHref,
   existingJobId,
 }: {
   quoteId: string;
+  customerId: string;
   status: string;
   pdfHref: string;
   existingJobId?: string | null;
@@ -39,6 +42,16 @@ export function QuoteActions({
           <a href={pdfHref} target="_blank" rel="noreferrer">
             <FileDown className="h-3.5 w-3.5" /> Download PDF
           </a>
+        </Button>
+        <Button type="button" size="sm" variant="outline" asChild>
+          <a href={pdfHref.replace(/\/pdf$/, "/docx")} target="_blank" rel="noreferrer">
+            <FileDown className="h-3.5 w-3.5" /> Download Word
+          </a>
+        </Button>
+        <Button type="button" size="sm" variant="outline" asChild>
+          <Link href={`/measure/new?customerId=${customerId}&quoteId=${quoteId}`}>
+            <Ruler className="h-3.5 w-3.5" /> Measure a plan
+          </Link>
         </Button>
         {existingJobId ? (
           <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/jobs/${existingJobId}`)}>

@@ -183,7 +183,7 @@ export async function listDocuments(
 ): Promise<DocumentItem[]> {
   const { customerId, jobId, category, query } = filters;
 
-  const [quotes, invoices, warranties, uploads] = await Promise.all([
+  const [quotes, invoices, warranties, uploads, takeoffs] = await Promise.all([
     db.quote.findMany({
       where: {
         organisationId: ORG_ID,
@@ -247,6 +247,20 @@ export async function listDocuments(
       },
       orderBy: { createdAt: "desc" },
     }),
+    db.takeoff.findMany({
+      where: {
+        organisationId: ORG_ID,
+        deletedAt: null,
+        ...(customerId ? { customerId } : {}),
+        ...(jobId ? { jobId } : {}),
+      },
+      select: {
+        id: true, name: true, createdAt: true,
+        customer: { select: { id: true, name: true } },
+        job: { select: { id: true, jobNumber: true } },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
   ]);
 
   const items: DocumentItem[] = [
@@ -299,6 +313,21 @@ export async function listDocuments(
         job: u.job,
       }))
     )),
+    // Links to the interactive measuring tool (not a raw PDF download) --
+    // the value here is the measurements/pricing, not the blank plan, so
+    // "open" (not "download") is the right action. See documents/page.tsx,
+    // which special-cases this category's link label.
+    ...takeoffs.map((t) => ({
+      id: `takeoff-${t.id}`,
+      category: "TAKEOFF",
+      name: t.name,
+      url: `/measure/${t.id}`,
+      mimeType: null,
+      sizeBytes: null,
+      createdAt: t.createdAt,
+      customer: t.customer,
+      job: t.job,
+    })),
   ];
 
   let filtered = items;

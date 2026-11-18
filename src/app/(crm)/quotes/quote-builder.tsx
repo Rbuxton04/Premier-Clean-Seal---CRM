@@ -43,10 +43,13 @@ export function QuoteBuilder({
   products,
   org,
   initial,
+  takeoffId,
 }: {
   mode: "create" | "edit";
   quoteId?: string;
   quoteNumber?: string;
+  /** Set when this quote is being created from a measuring-tool takeoff -- see createQuoteAction, which links the takeoff to the new quote once created. */
+  takeoffId?: string;
   customers: Array<{ id: string; name: string; company: string | null }>;
   products: Array<{ id: string; manufacturer: string; name: string; colour: string }>;
   org: { vatRegistered: boolean; vatRatePercent: number; defaultWarrantyMonths: number };
@@ -109,6 +112,7 @@ export function QuoteBuilder({
       <form action={formAction} className="space-y-5">
         <input type="hidden" name="customerId" value={customerId} />
         {initial.enquiryId && <input type="hidden" name="enquiryId" value={initial.enquiryId} />}
+        {takeoffId && <input type="hidden" name="takeoffId" value={takeoffId} />}
         <input
           type="hidden"
           name="lineItemsJson"

@@ -29,7 +29,7 @@ services:
       - key: DATABASE_URL
         sync: false
       - key: NODE_VERSION
-        value: 20.17.0
+        value: "22"
       # The web service is what actually generates every emailed link (quote
       # approval, customer portal, unsubscribe) via src/lib/url.ts -- this
       # must be set here, not just on the cron job below, or those links
@@ -58,7 +58,7 @@ services:
     startCommand: node scripts/run-crons.mjs
     envVars:
       - key: NODE_VERSION
-        value: 20.17.0
+        value: "22"
       - key: APP_URL
         sync: false
       # Must be set to the SAME value as the web service's CRON_SECRET.

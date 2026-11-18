@@ -6,14 +6,18 @@ import { nextDocumentNumber } from "@/lib/numbering";
 import { isSupabaseStorageConfigured, uploadFile } from "@/lib/storage/supabase";
 import { isResendConfigured, sendQuoteEmail } from "@/lib/email/resend";
 import { renderQuotePdfBuffer, type QuotePdfData } from "@/lib/pdf/quote-pdf";
+import { renderQuoteDocxBuffer } from "@/lib/docx/quote-docx";
 import { appUrl } from "@/lib/url";
 import type { QuoteFormInput } from "@/validators/quote";
+import { DEFAULT_ITEM_RATE_PER_METRE_GBP } from "@/validators/takeoff";
 import type { Findings } from "@/lib/ai/provider";
 
 const APPROVAL_WINDOW_DAYS = 30;
 // Draft rates for AI-prefilled line items — a starting point for staff to
-// adjust, never charged automatically.
-const RATE_PER_METRE = 8;
+// adjust, never charged automatically. Per-metre rate is the same figure
+// new takeoff items default to (DEFAULT_ITEM_RATE_PER_METRE_GBP) -- one
+// "standard rate card" value shared between the two prefill paths.
+const RATE_PER_METRE = DEFAULT_ITEM_RATE_PER_METRE_GBP;
 const RATE_PER_HOUR = 45;
 
 // Explicit hand-written return types — see the Prisma typing note in
@@ -202,6 +206,12 @@ async function buildPdfData(quote: QuoteDetail): Promise<QuotePdfData> {
 export async function getQuotePdfBuffer(quote: QuoteDetail): Promise<Buffer> {
   const data = await buildPdfData(quote);
   return renderQuotePdfBuffer(data);
+}
+
+/** The editable Word download -- same data (buildPdfData) and the same branded template content as the PDF, just a different renderer. See lib/docx/quote-docx.ts. */
+export async function getQuoteDocxBuffer(quote: QuoteDetail): Promise<Buffer> {
+  const data = await buildPdfData(quote);
+  return renderQuoteDocxBuffer(data);
 }
 
 export type SendQuoteResult = { approvalUrl: string; emailed: boolean };

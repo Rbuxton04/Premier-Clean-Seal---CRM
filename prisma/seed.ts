@@ -75,6 +75,25 @@ async function main() {
     create: { organisationId: org.id, name: "Domestic", colour: "#1E7A5A" },
   });
 
+  // Starter scale presets for the measuring tool (idempotent via upsert,
+  // same pattern as the tags below) -- the four ratios offered before any
+  // custom one has been saved. Kept as a literal list here (not imported
+  // from src/validators/takeoff.ts) since this script runs standalone via
+  // tsx outside the Next.js app's module graph.
+  const defaultScalePresets: Array<{ label: string; ratio: number }> = [
+    { label: "1:25", ratio: 25 },
+    { label: "1:50", ratio: 50 },
+    { label: "1:100", ratio: 100 },
+    { label: "1:200", ratio: 200 },
+  ];
+  for (const p of defaultScalePresets) {
+    await db.scalePreset.upsert({
+      where: { organisationId_label: { organisationId: org.id, label: p.label } },
+      update: {},
+      create: { organisationId: org.id, label: p.label, ratio: p.ratio },
+    });
+  }
+
   // Sample customers (only if none exist yet) so the app isn't empty on first look
   const existingCustomers = await db.customer.count({ where: { organisationId: org.id } });
   if (existingCustomers === 0) {

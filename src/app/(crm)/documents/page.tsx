@@ -99,9 +99,15 @@ export default async function DocumentsPage({
                     </TableCell>
                     <TableCell>{new Date(d.createdAt).toLocaleDateString("en-GB")}</TableCell>
                     <TableCell>
-                      <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                        <FileDown className="h-3.5 w-3.5" /> Download
-                      </a>
+                      {d.category === "TAKEOFF" ? (
+                        <a href={d.url} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          Open
+                        </a>
+                      ) : (
+                        <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                          <FileDown className="h-3.5 w-3.5" /> Download
+                        </a>
+                      )}
                     </TableCell>
                   </TableRow>
                 ))}

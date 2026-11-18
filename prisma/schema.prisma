@@ -51,6 +51,8 @@ model Organisation {
   hotelGroups     HotelGroup[]
   hotelProperties HotelProperty[]
   certifications  Certification[]
+  takeoffs        Takeoff[]
+  scalePresets    ScalePreset[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -140,6 +142,7 @@ model Customer {
   mediaFiles     MediaFile[]
   tags           Tag[]           @relation("CustomerTags")
   hotelProperties HotelProperty[]
+  takeoffs        Takeoff[]
 
   createdAt    DateTime  @default(now())
   updatedAt    DateTime  @updatedAt
@@ -364,6 +367,7 @@ model Quote {
   expiresAt      DateTime?
   lineItems      QuoteLineItem[]
   job            Job?
+  takeoffs       Takeoff[]
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
   // Soft delete — mirrors Customer.deletedAt / Job.deletedAt.
@@ -455,6 +459,7 @@ model Job {
   healthScore JobHealthScore?
   timeline    TimelineEvent[]
   roomVisits  RoomVisit[]
+  takeoffs    Takeoff[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1057,4 +1062,119 @@ model RoomVisitPhoto {
   kind        RoomVisitPhotoKind
   caption     String?
   createdAt   DateTime @default(now())
+}
+
+// ---------------------------------------------------------------------------
+// PDF plan measuring tool ("takeoffs") -- linear-metre takeoffs measured off
+// a floor-plan PDF, priced per item, that can feed straight into the
+// existing quote builder. No area/m2 anywhere in this feature by design --
+// the business quotes in linear metres only.
+// ---------------------------------------------------------------------------
+
+model ScalePreset {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  // Label shown in the picker, e.g. "1:50". ratio is the N in 1:N -- always
+  // a whole number in practice (architectural scales are never fractional).
+  label String
+  ratio Int
+
+  createdAt DateTime @default(now())
+
+  @@unique([organisationId, label])
+  @@index([organisationId])
+}
+
+model Takeoff {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  name String
+
+  // Storage path in the private bucket, resolved to a signed URL at read
+  // time -- same pattern as Certification.fileUrl.
+  pdfFileUrl String
+  pageCount  Int?
+
+  // Optional on all three -- a takeoff can be a standalone measurement, or
+  // attached to the customer it's for (so it's filed under that company in
+  // Documents), and/or to the job/quote it was measured for.
+  customerId String?
+  customer   Customer? @relation(fields: [customerId], references: [id])
+  jobId      String?
+  job        Job?      @relation(fields: [jobId], references: [id])
+  quoteId    String?
+  quote      Quote?    @relation(fields: [quoteId], references: [id])
+
+  // The single canonical scale factor -- PDF points (72 per inch, the fixed
+  // physical unit pdf.js renders against) of paper per real-world metre.
+  // Set either from a ratio (scaleRatioLabel, e.g. "1:50", converted) or
+  // from a calibration line (back-solved from a drawn line + a typed real
+  // length), but always stored this one way so measurement math never
+  // needs to know which method set it, and recomputes correctly at any
+  // zoom. See resolvePointsPerMetre in src/validators/takeoff.ts.
+  pointsPerMetre  Float
+  scaleRatioLabel String?
+
+  items TakeoffItem[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Soft delete -- mirrors Certification.deletedAt. Items and measurements
+  // are not independently meaningful records (unlike the takeoff itself),
+  // so they cascade with it at the DB level -- see TakeoffItem.
+  deletedAt   DateTime?
+  deletedById String?
+
+  @@index([organisationId, deletedAt])
+  @@index([customerId])
+}
+
+model TakeoffItem {
+  id        String  @id @default(cuid())
+  takeoffId String
+  takeoff   Takeoff @relation(fields: [takeoffId], references: [id], onDelete: Cascade)
+
+  name String
+  // Hex colour (e.g. "#3C2263") -- drawn on the plan in this colour and
+  // shown as a swatch in the side panel.
+  colour String
+  // Per-metre rate for THIS takeoff -- defaulted from the rate card when
+  // created, but a snapshot from then on so a saved takeoff stays
+  // reproducible even if the rate card changes later (same reasoning as
+  // RoomVisit.priceGbp).
+  pricePerMetre Decimal @db.Decimal(10, 2)
+  sortOrder     Int     @default(0)
+
+  measurements TakeoffMeasurement[]
+
+  createdAt DateTime @default(now())
+
+  @@index([takeoffId, sortOrder])
+}
+
+enum TakeoffMeasurementType {
+  LENGTH
+  CHAIN
+}
+
+model TakeoffMeasurement {
+  id            String      @id @default(cuid())
+  takeoffItemId String
+  takeoffItem   TakeoffItem @relation(fields: [takeoffItemId], references: [id], onDelete: Cascade)
+
+  pageNumber Int
+  type       TakeoffMeasurementType
+  // [{x,y}, ...] in PDF page-point space (zoom-independent -- see the
+  // comment on Takeoff.pointsPerMetre above) -- 2 points for LENGTH, 2 or
+  // more for CHAIN.
+  points Json
+  computedMetres Decimal @db.Decimal(10, 2)
+  label          String?
+
+  createdAt DateTime @default(now())
+
+  @@index([takeoffItemId])
 }
