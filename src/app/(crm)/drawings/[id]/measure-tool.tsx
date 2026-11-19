@@ -67,8 +67,19 @@ export function MeasureTool({
   const [numPages, setNumPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [renderScale, setRenderScale] = useState(1);
+  // Additional view-only rotation on top of the page's own /Rotate, applied
+  // via pdf.js's own rotation parameter rather than a CSS transform -- see
+  // the comment on screenToPoint/pointToScreen below for why.
+  const [viewRotation, setViewRotation] = useState<0 | 90 | 180 | 270>(0);
   const [viewportSize, setViewportSize] = useState({ width: 0, height: 0 });
   const [pdfError, setPdfError] = useState<string | null>(null);
+  // The two viewports behind screenToPoint/pointToScreen -- see renderPage().
+  const baseViewportRef = useRef<import("pdfjs-dist").PageViewport | null>(null);
+  const displayViewportRef = useRef<import("pdfjs-dist").PageViewport | null>(null);
+  const zoomAnchorRef = useRef<{ pointX: number; pointY: number; cursorX: number; cursorY: number } | null>(null);
+  const panRef = useRef<{ startX: number; startY: number; startScrollLeft: number; startScrollTop: number } | null>(null);
+  const panMovedRef = useRef(false);
+  const [spaceHeld, setSpaceHeld] = useState(false);
 
   const [pointsPerMetre, setPointsPerMetre] = useState(takeoff.pointsPerMetre);
   const [scaleRatioLabel, setScaleRatioLabel] = useState(takeoff.scaleRatioLabel);
@@ -117,27 +128,95 @@ export function MeasureTool({
     };
   }, [takeoff.id]);
 
-  // --- Render the current page at the current zoom -----------------------
+  // --- Render the current page at the current zoom/rotation --------------
+  // Renders onto a CANVAS CAPPED AT A MAXIMUM PIXEL AREA -- an oversized
+  // architectural sheet at a high zoom could otherwise ask the browser for
+  // a multi-hundred-megabyte canvas, which can crash the tab outright on
+  // some devices. When the requested size would exceed that cap, this
+  // clamps the EFFECTIVE render scale (not the zoom percentage shown in the
+  // UI, which still reflects what the user asked for) and surfaces a short
+  // message instead of silently drawing at an unexpectedly lower quality.
+  const MAX_CANVAS_PIXELS = 16_000_000; // ~4000x4000 -- comfortably under every mainstream browser's canvas size limit
   const renderPage = useCallback(async () => {
     const canvas = canvasRef.current;
     if (!pdfDoc || !canvas) return;
     try {
       const page = await pdfDoc.getPage(currentPage);
-      const viewport = page.getViewport({ scale: renderScale });
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      setViewportSize({ width: viewport.width, height: viewport.height });
+      const effectiveRotation = ((page.rotate + viewRotation) % 360 + 360) % 360;
+      // Fixed at scale 1 -- this (page.rotate, scale 1) space is exactly
+      // what every stored TakeoffMeasurement.points value is in (see the
+      // scale-math comment in validators/takeoff.ts), independent of
+      // render zoom. Using renderScale here instead would silently scale
+      // every stored point by the CURRENT zoom on every conversion --
+      // reopening the same drawing at a different zoom would then show
+      // measurements in the wrong place entirely. This is the one
+      // invariant the whole points-space design depends on.
+      const baseViewport = page.getViewport({ scale: 1 });
+      let displayViewport = page.getViewport({ scale: renderScale, rotation: effectiveRotation });
+
+      if (displayViewport.width * displayViewport.height > MAX_CANVAS_PIXELS) {
+        const cappedScale = renderScale * Math.sqrt(MAX_CANVAS_PIXELS / (displayViewport.width * displayViewport.height));
+        displayViewport = page.getViewport({ scale: cappedScale, rotation: effectiveRotation });
+        setMessage("This page is too large to render at full quality at this zoom -- showing it at a reduced resolution.");
+      }
+
+      baseViewportRef.current = baseViewport;
+      displayViewportRef.current = displayViewport;
+      canvas.width = displayViewport.width;
+      canvas.height = displayViewport.height;
+      setViewportSize({ width: displayViewport.width, height: displayViewport.height });
       const ctx = canvas.getContext("2d");
       if (!ctx) return;
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      await page.render({ canvasContext: ctx, viewport: displayViewport }).promise;
     } catch (err) {
       setPdfError(err instanceof Error ? err.message : "Could not render this page.");
     }
-  }, [pdfDoc, currentPage, renderScale]);
+  }, [pdfDoc, currentPage, renderScale, viewRotation]);
 
   useEffect(() => {
     renderPage();
   }, [renderPage]);
+
+  // Restores the page-point that was under the cursor before a zoom-at-
+  // cursor wheel event, once the canvas has actually re-rendered at the new
+  // scale (viewportSize only updates after that render completes).
+  useEffect(() => {
+    const anchor = zoomAnchorRef.current;
+    const container = viewerContainerRef.current;
+    if (!anchor || !container) return;
+    container.scrollLeft = anchor.pointX * renderScale - anchor.cursorX;
+    container.scrollTop = anchor.pointY * renderScale - anchor.cursorY;
+    zoomAnchorRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportSize]);
+
+  // Zoom at the cursor on Ctrl+wheel or a trackpad pinch (Chrome/Firefox
+  // report pinch-zoom as a wheel event with ctrlKey set) -- a NATIVE,
+  // non-passive listener, since React's onWheel is attached passively and
+  // silently can't preventDefault the page from scrolling underneath. A
+  // plain wheel (no Ctrl) is left alone to scroll/pan the container
+  // natively, matching the Figma/Google Maps convention the brief's
+  // phrasing implies.
+  useEffect(() => {
+    const container = viewerContainerRef.current;
+    if (!container) return;
+    function onWheel(e: WheelEvent) {
+      if (!e.ctrlKey && !e.metaKey) return;
+      e.preventDefault();
+      const rect = container!.getBoundingClientRect();
+      const cursorX = e.clientX - rect.left;
+      const cursorY = e.clientY - rect.top;
+      setRenderScale((z) => {
+        const pointX = (container!.scrollLeft + cursorX) / z;
+        const pointY = (container!.scrollTop + cursorY) / z;
+        zoomAnchorRef.current = { pointX, pointY, cursorX, cursorY };
+        const next = z * (1 - e.deltaY * 0.0015);
+        return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, +next.toFixed(3)));
+      });
+    }
+    container.addEventListener("wheel", onWheel, { passive: false });
+    return () => container.removeEventListener("wheel", onWheel);
+  }, []);
 
   // --- Keyboard: Escape cancels a draw/calibration, Enter finishes a chain,
   // S/L/C/K pick a tool (SketchUp-style single-select tool palette) -------
@@ -157,6 +236,9 @@ export function MeasureTool({
         else if (key === "l") setActiveTool("length");
         else if (key === "c") setActiveTool("chain");
         else if (key === "k") setActiveTool("calibrate");
+        else if (key === "1") fitPage();
+        else if (key === "2") fitWidth();
+        else if (key === "r") rotateView();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -164,13 +246,60 @@ export function MeasureTool({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawPoints, drawIsChain]);
 
+  // --- Keyboard: holding Space pans with any tool (a separate effect since
+  // this needs keyup too, unlike the shortcuts above) ----------------------
+  useEffect(() => {
+    function isTypingTarget(e: KeyboardEvent): boolean {
+      const target = e.target as HTMLElement | null;
+      return Boolean(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
+    }
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.code === "Space" && !isTypingTarget(e)) {
+        e.preventDefault(); // stop the page itself from scrolling on Space
+        setSpaceHeld(true);
+      }
+    }
+    function onKeyUp(e: KeyboardEvent) {
+      if (e.code === "Space") setSpaceHeld(false);
+    }
+    window.addEventListener("keydown", onKeyDown);
+    window.addEventListener("keyup", onKeyUp);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown);
+      window.removeEventListener("keyup", onKeyUp);
+    };
+  }, []);
+
+  /**
+   * Converts a click into the STORED point space -- which stays relative
+   * to the page's own native rotation regardless of any view rotation the
+   * user has applied (the brief's "stored points stay in unrotated page-
+   * point space; convert for display and input"). Goes through pdf.js's
+   * own PageViewport conversions for both the current (possibly rotated)
+   * display viewport and the unrotated base viewport, the same technique
+   * proven in src/lib/pdf/takeoff-markup-transform.ts for the server-side
+   * export -- rather than deriving a rotation matrix by hand twice.
+   */
   function screenToPoint(clientX: number, clientY: number): Point {
     const rect = overlayRef.current!.getBoundingClientRect();
-    return { x: (clientX - rect.left) / renderScale, y: (clientY - rect.top) / renderScale };
+    const displayX = clientX - rect.left;
+    const displayY = clientY - rect.top;
+    const dv = displayViewportRef.current;
+    const bv = baseViewportRef.current;
+    if (!dv || !bv) return { x: displayX / renderScale, y: displayY / renderScale };
+    const [pdfX, pdfY] = dv.convertToPdfPoint(displayX, displayY);
+    const [x, y] = bv.convertToViewportPoint(pdfX, pdfY);
+    return { x, y };
   }
 
+  /** The inverse of screenToPoint -- a stored (unrotated) point to where it should be drawn on the current, possibly rotated, display. */
   function pointToScreen(p: Point): Point {
-    return { x: p.x * renderScale, y: p.y * renderScale };
+    const dv = displayViewportRef.current;
+    const bv = baseViewportRef.current;
+    if (!dv || !bv) return { x: p.x * renderScale, y: p.y * renderScale };
+    const [pdfX, pdfY] = bv.convertToPdfPoint(p.x, p.y);
+    const [x, y] = dv.convertToViewportPoint(pdfX, pdfY);
+    return { x, y };
   }
 
   /**
@@ -275,11 +404,15 @@ export function MeasureTool({
 
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.detail > 1) return; // double-click is handled separately, below
+    if (panMovedRef.current) {
+      panMovedRef.current = false; // a real pan drag just ended under this click -- don't also treat it as a measurement click
+      return;
+    }
     if (activeTool === "calibrate") {
       handleCalibrationClick(e);
       return;
     }
-    if (activeTool === "select") return; // nothing to do yet -- panning lands in Step 3
+    if (activeTool === "select") return; // Select/Pan: a plain click does nothing, panning is a drag (below)
     if (!selectedItemId) {
       setMessage("Select or add an item before measuring.");
       return;
@@ -311,6 +444,44 @@ export function MeasureTool({
 
   function undoLastPoint() {
     setDrawPoints((pts) => pts.slice(0, -1));
+  }
+
+  // --- Pan: Select/Pan tool, Space held with any tool, or middle-mouse,
+  // from any tool. Scrolls the viewer's native container directly rather
+  // than a custom transform -- screenToPoint/pointToScreen already read
+  // the overlay's live getBoundingClientRect(), so they stay correct at
+  // any scroll position with no extra code. Two-finger drag on touch pans
+  // via the browser's own native touch-scrolling of the same container.
+  function wantsPan(e: React.PointerEvent): boolean {
+    return activeTool === "select" || spaceHeld || e.button === 1;
+  }
+
+  function handleOverlayPointerDown(e: React.PointerEvent) {
+    if (!wantsPan(e)) return;
+    const container = viewerContainerRef.current;
+    if (!container) return;
+    e.preventDefault();
+    (e.currentTarget as Element).setPointerCapture(e.pointerId);
+    panRef.current = { startX: e.clientX, startY: e.clientY, startScrollLeft: container.scrollLeft, startScrollTop: container.scrollTop };
+    panMovedRef.current = false;
+  }
+
+  function handleOverlayPointerMove(e: React.PointerEvent) {
+    const pan = panRef.current;
+    const container = viewerContainerRef.current;
+    if (pan && container) {
+      const dx = e.clientX - pan.startX;
+      const dy = e.clientY - pan.startY;
+      if (Math.abs(dx) > 3 || Math.abs(dy) > 3) panMovedRef.current = true;
+      container.scrollLeft = pan.startScrollLeft - dx;
+      container.scrollTop = pan.startScrollTop - dy;
+      return;
+    }
+    handleOverlayMouseMove(e);
+  }
+
+  function handleOverlayPointerUp() {
+    panRef.current = null;
   }
 
   /**
@@ -493,6 +664,11 @@ export function MeasureTool({
     setRenderScale(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, container.clientWidth / natural.width)));
   }
 
+  /** View-only -- stored measurement points never change; pointToScreen/screenToPoint convert through pdf.js's own viewport math for whatever rotation is currently applied (see those functions' comments). */
+  function rotateView() {
+    setViewRotation((r) => ((r + 90) % 360) as 0 | 90 | 180 | 270);
+  }
+
   const totalMetres = +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2);
   const grandTotalGbp = +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2);
   const pageMeasurements = items.flatMap((it) => it.measurements.filter((m) => m.pageNumber === currentPage).map((m) => ({ ...m, colour: it.colour, itemId: it.id })));
@@ -541,7 +717,7 @@ export function MeasureTool({
         )}
       </div>
     ),
-    pages: <PagesPanel numPages={numPages} currentPage={currentPage} onJump={setCurrentPage} items={items} />,
+    pages: <PagesPanel pdfDoc={pdfDoc} numPages={numPages} currentPage={currentPage} onJump={setCurrentPage} items={items} />,
     search: <p className="text-xs text-muted-foreground">Search isn&apos;t available yet -- coming in a later update.</p>,
     selected: selectedMeasurement ? (
       <div className="space-y-2 text-sm">
@@ -594,6 +770,7 @@ export function MeasureTool({
         onZoomOut={() => setRenderScale((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2)))}
         onFitPage={fitPage}
         onFitWidth={fitWidth}
+        onRotate={rotateView}
         fullScreen={fullScreen}
         onToggleFullScreen={() => setFullScreen((v) => !v)}
       />
@@ -635,10 +812,12 @@ export function MeasureTool({
                   ref={svgRef}
                   width={viewportSize.width}
                   height={viewportSize.height}
-                  className="absolute inset-0 cursor-crosshair"
+                  className={activeTool === "select" || spaceHeld ? "absolute inset-0 cursor-grab active:cursor-grabbing" : "absolute inset-0 cursor-crosshair"}
                   onClick={handleOverlayClick}
                   onDoubleClick={handleOverlayDoubleClick}
-                  onMouseMove={handleOverlayMouseMove}
+                  onPointerDown={handleOverlayPointerDown}
+                  onPointerMove={handleOverlayPointerMove}
+                  onPointerUp={handleOverlayPointerUp}
                 >
                   {pageMeasurements.map((m) => {
                     const screenPts = m.points.map(pointToScreen);

@@ -1,7 +1,7 @@
 "use client";
 
 import { useState } from "react";
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Minimize2, ScanLine, MoveHorizontal, Pencil, Check, X } from "lucide-react";
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Minimize2, ScanLine, MoveHorizontal, RotateCw, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
@@ -10,11 +10,8 @@ export type FileTab = { id: string; name: string };
 /**
  * Top bar: drawing name (editable), file tabs (a single tab until Step 4
  * adds more than one file per drawing -- the tab bar is already built to
- * take an arbitrary list), page nav, zoom, fit controls, full-screen
- * toggle. Rotate-view is deliberately NOT here yet -- it needs the
- * rotation-aware click-coordinate transform that Step 3 (navigation) adds
- * alongside pan/zoom-at-cursor; a rotate button with no coordinate fix
- * would visibly break measuring, which is worse than not having it yet.
+ * take an arbitrary list), page nav, zoom, fit controls, rotate view, and
+ * a full-screen toggle.
  */
 export function TopBar({
   name,
@@ -31,6 +28,7 @@ export function TopBar({
   onZoomOut,
   onFitPage,
   onFitWidth,
+  onRotate,
   fullScreen,
   onToggleFullScreen,
 }: {
@@ -48,6 +46,7 @@ export function TopBar({
   onZoomOut: () => void;
   onFitPage: () => void;
   onFitWidth: () => void;
+  onRotate: () => void;
   fullScreen: boolean;
   onToggleFullScreen: () => void;
 }) {
@@ -107,8 +106,9 @@ export function TopBar({
         <Button type="button" size="sm" variant="outline" onClick={onZoomOut} aria-label="Zoom out"><ZoomOut className="h-3.5 w-3.5" /></Button>
         <span className="w-10 text-center text-xs">{Math.round(zoomPercent)}%</span>
         <Button type="button" size="sm" variant="outline" onClick={onZoomIn} aria-label="Zoom in"><ZoomIn className="h-3.5 w-3.5" /></Button>
-        <Button type="button" size="sm" variant="outline" onClick={onFitPage} title="Fit page"><ScanLine className="h-3.5 w-3.5" /> Fit page</Button>
-        <Button type="button" size="sm" variant="outline" onClick={onFitWidth} title="Fit width"><MoveHorizontal className="h-3.5 w-3.5" /> Fit width</Button>
+        <Button type="button" size="sm" variant="outline" onClick={onFitPage} title="Fit page (1)"><ScanLine className="h-3.5 w-3.5" /> Fit page</Button>
+        <Button type="button" size="sm" variant="outline" onClick={onFitWidth} title="Fit width (2)"><MoveHorizontal className="h-3.5 w-3.5" /> Fit width</Button>
+        <Button type="button" size="sm" variant="outline" onClick={onRotate} title="Rotate view 90 degrees (R)" aria-label="Rotate view"><RotateCw className="h-3.5 w-3.5" /></Button>
 
         <div className="ml-auto">
           <Button type="button" size="sm" variant="outline" onClick={onToggleFullScreen} aria-label={fullScreen ? "Exit full screen" : "Enter full screen"}>
