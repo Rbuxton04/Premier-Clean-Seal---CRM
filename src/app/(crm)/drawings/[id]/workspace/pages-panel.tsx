@@ -66,16 +66,24 @@ export function PagesPanel({
   currentPage,
   onJump,
   items,
+  activeFileId,
+  firstFileId,
 }: {
   pdfDoc: import("pdfjs-dist").PDFDocumentProxy | null;
   numPages: number;
   currentPage: number;
   onJump: (page: number) => void;
   items: TakeoffItemDetail[];
+  /** Counts only measurements on the ACTIVE file -- a null takeoffFileId means "the first file" (same convention as everywhere else), so different files sharing the same page numbers never get their counts merged. */
+  activeFileId: string;
+  firstFileId: string | undefined;
 }) {
   const counts = new Map<number, number>();
   for (const item of items) {
-    for (const m of item.measurements) counts.set(m.pageNumber, (counts.get(m.pageNumber) ?? 0) + 1);
+    for (const m of item.measurements) {
+      if ((m.takeoffFileId ?? firstFileId) !== activeFileId) continue;
+      counts.set(m.pageNumber, (counts.get(m.pageNumber) ?? 0) + 1);
+    }
   }
 
   return (

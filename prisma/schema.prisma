@@ -54,6 +54,7 @@ model Organisation {
   takeoffs        Takeoff[]
   scalePresets    ScalePreset[]
   takeoffItemPresets TakeoffItemPreset[]
+  takeoffFiles       TakeoffFile[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -1120,6 +1121,7 @@ model Takeoff {
   scaleRatioLabel String?
 
   items TakeoffItem[]
+  files TakeoffFile[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1166,6 +1168,17 @@ model TakeoffMeasurement {
   takeoffItemId String
   takeoffItem   TakeoffItem @relation(fields: [takeoffItemId], references: [id], onDelete: Cascade)
 
+  // Which file (of the takeoff's possibly several) this measurement's
+  // pageNumber refers to -- added when a drawing could hold more than one
+  // PDF (floor plans + elevations, etc). Nullable as a safety net: treat a
+  // null here as "the takeoff's first file" in code, same as the brief --
+  // every row that existed before this column was added was backfilled to
+  // point at its takeoff's one pre-existing file (see this migration's
+  // data backfill), so in practice this should only ever be null for a
+  // row some future bug created without setting it.
+  takeoffFileId String?
+  takeoffFile   TakeoffFile? @relation(fields: [takeoffFileId], references: [id])
+
   pageNumber Int
   type       TakeoffMeasurementType
   // [{x,y}, ...] in PDF page-point space (zoom-independent -- see the
@@ -1178,6 +1191,40 @@ model TakeoffMeasurement {
   createdAt DateTime @default(now())
 
   @@index([takeoffItemId])
+  @@index([takeoffFileId])
+}
+
+// One PDF file within a drawing (Drawings Part 1 Step 4) -- a drawing can
+// hold several (floor plans + elevations, etc), shown as tabs. Takeoff
+// keeps its own pdfFileUrl/pageCount columns (now redundant but not
+// dropped, additive-only); TakeoffFile is the source of truth for the
+// file list from this migration on -- every pre-existing Takeoff got
+// exactly one TakeoffFile backfilled from those columns, and every
+// pre-existing TakeoffMeasurement was pointed at it (see this migration's
+// data backfill, below the DDL).
+model TakeoffFile {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  takeoffId      String
+  takeoff        Takeoff @relation(fields: [takeoffId], references: [id], onDelete: Cascade)
+
+  name       String
+  fileUrl    String
+  pageCount  Int?
+  // Optional per-file scale override -- a drawing's scale (Takeoff.
+  // pointsPerMetre) applies to every file by default; set this only when
+  // one file (e.g. an elevation) was drawn at a different scale than the
+  // rest. Null means "use the takeoff's scale", not "zero".
+  pointsPerMetre Float?
+  sortOrder      Int     @default(0)
+
+  measurements TakeoffMeasurement[]
+
+  createdAt DateTime  @default(now())
+  deletedAt DateTime?
+
+  @@index([takeoffId, deletedAt])
 }
 
 // The reusable rate card (Measuring tool Phase 2, Part B) -- set up once,

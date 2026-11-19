@@ -51,10 +51,24 @@ export async function listTakeoffs(filters: TakeoffFilters = {}): Promise<Takeof
 export type TakeoffMeasurementItem = {
   id: string;
   pageNumber: number;
+  // Which file (of the takeoff's possibly several) pageNumber is relative
+  // to -- null means "the takeoff's first file", the same safety-net
+  // convention the schema comment on TakeoffMeasurement.takeoffFileId
+  // documents (every pre-Step-4 row was backfilled to a real id; this
+  // only stays null if something failed to set it).
+  takeoffFileId: string | null;
   type: TakeoffMeasurementType;
   points: Point[];
   computedMetres: unknown;
   label: string | null;
+};
+
+export type TakeoffFileItem = {
+  id: string;
+  name: string;
+  pageCount: number | null;
+  pointsPerMetre: number | null;
+  sortOrder: number;
 };
 
 export type TakeoffItemDetail = {
@@ -80,6 +94,8 @@ export type TakeoffDetail = {
   pointsPerMetre: number;
   scaleRatioLabel: string | null;
   items: TakeoffItemDetail[];
+  /** Every file on this drawing (Drawings Part 1 Step 4) -- the viewer streams each one's bytes on demand via /api/takeoffs/[id]/file?fileId=..., never a resolved URL here. */
+  files: TakeoffFileItem[];
   totalMetres: number;
   grandTotalGbp: number;
   createdAt: Date;
@@ -88,7 +104,7 @@ export type TakeoffDetail = {
 
 function summariseItem(item: {
   id: string; name: string; colour: string; pricePerMetre: unknown; sortOrder: number;
-  measurements: Array<{ id: string; pageNumber: number; type: TakeoffMeasurementType; points: unknown; computedMetres: unknown; label: string | null }>;
+  measurements: Array<{ id: string; pageNumber: number; takeoffFileId: string | null; type: TakeoffMeasurementType; points: unknown; computedMetres: unknown; label: string | null }>;
 }): TakeoffItemDetail {
   const totalMetres = +item.measurements.reduce((sum, m) => sum + Number(m.computedMetres), 0).toFixed(2);
   return {
@@ -98,12 +114,16 @@ function summariseItem(item: {
     pricePerMetre: item.pricePerMetre,
     sortOrder: item.sortOrder,
     measurements: item.measurements.map((m) => ({
-      id: m.id, pageNumber: m.pageNumber, type: m.type, points: m.points as unknown as Point[],
+      id: m.id, pageNumber: m.pageNumber, takeoffFileId: m.takeoffFileId, type: m.type, points: m.points as unknown as Point[],
       computedMetres: m.computedMetres, label: m.label,
     })),
     totalMetres,
     lineTotalGbp: +(totalMetres * Number(item.pricePerMetre)).toFixed(2),
   };
+}
+
+function summariseFile(file: { id: string; name: string; pageCount: number | null; pointsPerMetre: number | null; sortOrder: number }): TakeoffFileItem {
+  return { id: file.id, name: file.name, pageCount: file.pageCount, pointsPerMetre: file.pointsPerMetre, sortOrder: file.sortOrder };
 }
 
 export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
@@ -112,6 +132,7 @@ export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
     include: {
       customer: { select: { id: true, name: true } },
       items: { orderBy: { sortOrder: "asc" }, include: { measurements: { orderBy: { createdAt: "asc" } } } },
+      files: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" } },
     },
   });
   if (!row) return null;
@@ -129,6 +150,7 @@ export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
     pointsPerMetre: row.pointsPerMetre,
     scaleRatioLabel: row.scaleRatioLabel,
     items,
+    files: row.files.map(summariseFile),
     totalMetres: +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2),
     grandTotalGbp: +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2),
     createdAt: row.createdAt,
@@ -150,13 +172,25 @@ export type TakeoffExportDetail = {
   createdAt: Date;
 };
 
-/** Same shape as getTakeoff(), but with the takeoff's raw PDF storage path instead of a resolved signed URL -- for the marked-up-plan export route, which reads the source file itself server-side. */
+/**
+ * Same shape as getTakeoff(), but with the takeoff's raw PDF storage path
+ * instead of a resolved signed URL -- for the marked-up-plan export route,
+ * which reads the source file itself server-side.
+ *
+ * Known limitation from Drawings Part 1 Step 4: a drawing can now hold
+ * several files, but this (and the export route built on it, from Phase
+ * 2) only exports the FIRST one -- extending the marked-up-plan export to
+ * cover every file is out of this pass's scope. pdfFilePath falls back to
+ * Takeoff.pdfFileUrl itself if, somehow, the backfilled TakeoffFile row is
+ * missing.
+ */
 export async function getTakeoffForExport(id: string): Promise<TakeoffExportDetail | null> {
   const row = await db.takeoff.findFirst({
     where: { id, organisationId: ORG_ID, deletedAt: null },
     include: {
       customer: { select: { id: true, name: true, company: true } },
       items: { orderBy: { sortOrder: "asc" }, include: { measurements: { orderBy: { createdAt: "asc" } } } },
+      files: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" }, take: 1 },
     },
   });
   if (!row) return null;
@@ -165,7 +199,7 @@ export async function getTakeoffForExport(id: string): Promise<TakeoffExportDeta
   return {
     id: row.id,
     name: row.name,
-    pdfFilePath: row.pdfFileUrl,
+    pdfFilePath: row.files[0]?.fileUrl ?? row.pdfFileUrl,
     customer: row.customer,
     pointsPerMetre: row.pointsPerMetre,
     scaleRatioLabel: row.scaleRatioLabel,
@@ -180,9 +214,10 @@ export async function getTakeoffForExport(id: string): Promise<TakeoffExportDeta
 // Takeoff CRUD
 // ---------------------------------------------------------------------------
 
+/** Also creates the drawing's first TakeoffFile -- every takeoff from now on has at least one row there from the moment it's created, same as every pre-Step-4 takeoff got via this migration's backfill. */
 export async function createTakeoff(data: TakeoffCreateInput): Promise<{ id: string }> {
   const { pointsPerMetre, scaleRatioLabel } = resolvePointsPerMetre(data.scale);
-  return db.takeoff.create({
+  const takeoff = await db.takeoff.create({
     data: {
       organisationId: ORG_ID,
       name: data.name,
@@ -196,6 +231,10 @@ export async function createTakeoff(data: TakeoffCreateInput): Promise<{ id: str
     },
     select: { id: true },
   });
+  await db.takeoffFile.create({
+    data: { organisationId: ORG_ID, takeoffId: takeoff.id, name: "Plan", fileUrl: data.pdfFileUrl, pageCount: data.pageCount ?? null, sortOrder: 0 },
+  });
+  return takeoff;
 }
 
 export async function updateTakeoffDetails(id: string, data: { name?: string; customerId?: string | null; jobId?: string | null; quoteId?: string | null }): Promise<void> {
@@ -273,6 +312,78 @@ export async function deleteTakeoffItem(id: string): Promise<void> {
 }
 
 // ---------------------------------------------------------------------------
+// Files (Drawings Part 1 Step 4) -- several PDFs per drawing, shown as tabs
+// ---------------------------------------------------------------------------
+
+/**
+ * The raw storage path for ONE file on a drawing -- for the viewer's file-
+ * streaming route. Org-scoped and 404-safe: returns null if the takeoff
+ * doesn't exist (or is soft-deleted), or if fileId was given but doesn't
+ * belong to this takeoff. Omitting fileId (or passing one that turns out
+ * not to match) falls back to the takeoff's first file -- the same
+ * null-means-first-file safety net as TakeoffMeasurement.takeoffFileId.
+ */
+export async function getTakeoffFileRawPath(takeoffId: string, fileId?: string | null): Promise<string | null> {
+  const takeoff = await db.takeoff.findFirst({
+    where: { id: takeoffId, organisationId: ORG_ID, deletedAt: null },
+    select: { pdfFileUrl: true, files: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" }, select: { id: true, fileUrl: true } } },
+  });
+  if (!takeoff) return null;
+  const file = (fileId ? takeoff.files.find((f) => f.id === fileId) : null) ?? takeoff.files[0];
+  return file?.fileUrl ?? takeoff.pdfFileUrl;
+}
+
+export async function listTakeoffFiles(takeoffId: string): Promise<TakeoffFileItem[]> {
+  const rows = await db.takeoffFile.findMany({ where: { takeoffId, deletedAt: null }, orderBy: { sortOrder: "asc" } });
+  return rows.map(summariseFile);
+}
+
+/** "Add file" -- appends a new tab at the end. Does not touch the takeoff's own scale; a per-file override is set separately if needed. */
+export async function createTakeoffFile(takeoffId: string, data: { name: string; fileUrl: string; pageCount?: number }): Promise<{ id: string }> {
+  const takeoff = await db.takeoff.findUniqueOrThrow({ where: { id: takeoffId }, select: { organisationId: true } });
+  const maxSort = await db.takeoffFile.aggregate({ where: { takeoffId }, _max: { sortOrder: true } });
+  return db.takeoffFile.create({
+    data: {
+      organisationId: takeoff.organisationId,
+      takeoffId,
+      name: data.name,
+      fileUrl: data.fileUrl,
+      pageCount: data.pageCount ?? null,
+      sortOrder: (maxSort._max.sortOrder ?? -1) + 1,
+    },
+    select: { id: true },
+  });
+}
+
+export async function renameTakeoffFile(id: string, name: string): Promise<void> {
+  await db.takeoffFile.update({ where: { id }, data: { name } });
+}
+
+/** Simple up/down reordering of the file tabs -- same convention as the rate card's moveRateCardItem. */
+export async function moveTakeoffFile(takeoffId: string, id: string, direction: "up" | "down"): Promise<void> {
+  const files = await listTakeoffFiles(takeoffId);
+  const index = files.findIndex((f) => f.id === id);
+  if (index === -1) return;
+  const swapIndex = direction === "up" ? index - 1 : index + 1;
+  if (swapIndex < 0 || swapIndex >= files.length) return;
+
+  await db.$transaction([
+    db.takeoffFile.update({ where: { id: files[index].id }, data: { sortOrder: files[swapIndex].sortOrder } }),
+    db.takeoffFile.update({ where: { id: files[swapIndex].id }, data: { sortOrder: files[index].sortOrder } }),
+  ]);
+}
+
+/** For the removal confirm dialog -- "this file has N measurements" -- counts non-deleted measurements whose pageNumber belongs to this file. */
+export async function countMeasurementsOnFile(takeoffId: string, fileId: string): Promise<number> {
+  return db.takeoffMeasurement.count({ where: { takeoffItem: { takeoffId }, takeoffFileId: fileId } });
+}
+
+/** Soft delete -- reversible, same convention as Takeoff/Certification. Measurements that belonged to this file are left in place (not cascaded), consistent with how removing a file is a confirm-guarded but recoverable action, not a hard delete. */
+export async function softDeleteTakeoffFile(id: string): Promise<void> {
+  await db.takeoffFile.update({ where: { id }, data: { deletedAt: new Date() } });
+}
+
+// ---------------------------------------------------------------------------
 // Measurements
 // ---------------------------------------------------------------------------
 
@@ -282,6 +393,7 @@ export async function createMeasurement(data: TakeoffMeasurementInput, pointsPer
     data: {
       takeoffItemId: data.takeoffItemId,
       pageNumber: data.pageNumber,
+      takeoffFileId: data.takeoffFileId ?? null,
       type: data.type,
       points: data.points,
       computedMetres,

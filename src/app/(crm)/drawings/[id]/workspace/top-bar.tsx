@@ -1,17 +1,16 @@
 "use client";
 
 import { useState } from "react";
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Minimize2, ScanLine, MoveHorizontal, RotateCw, Pencil, Check, X } from "lucide-react";
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Maximize2, Minimize2, ScanLine, MoveHorizontal, RotateCw, Pencil, Check, X, Plus, ArrowLeft, ArrowRight, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 
 export type FileTab = { id: string; name: string };
 
 /**
- * Top bar: drawing name (editable), file tabs (a single tab until Step 4
- * adds more than one file per drawing -- the tab bar is already built to
- * take an arbitrary list), page nav, zoom, fit controls, rotate view, and
- * a full-screen toggle.
+ * Top bar: drawing name (editable), file tabs (Drawings Part 1 Step 4 --
+ * add/rename/reorder/remove), page nav, zoom, fit controls, rotate view,
+ * and a full-screen toggle.
  */
 export function TopBar({
   name,
@@ -19,6 +18,10 @@ export function TopBar({
   files,
   activeFileId,
   onSelectFile,
+  onAddFile,
+  onRenameFile,
+  onMoveFile,
+  onRemoveFile,
   currentPage,
   numPages,
   onPrevPage,
@@ -37,6 +40,10 @@ export function TopBar({
   files: FileTab[];
   activeFileId: string;
   onSelectFile: (id: string) => void;
+  onAddFile: () => void;
+  onRenameFile: (fileId: string, name: string) => void;
+  onMoveFile: (fileId: string, direction: "up" | "down") => void;
+  onRemoveFile: (fileId: string) => void;
   currentPage: number;
   numPages: number;
   onPrevPage: () => void;
@@ -50,6 +57,8 @@ export function TopBar({
   fullScreen: boolean;
   onToggleFullScreen: () => void;
 }) {
+  const [editingFileId, setEditingFileId] = useState<string | null>(null);
+  const [fileNameDraft, setFileNameDraft] = useState("");
   const [editingName, setEditingName] = useState(false);
   const [nameDraft, setNameDraft] = useState(name);
 
@@ -117,20 +126,63 @@ export function TopBar({
         </div>
       </div>
 
-      {files.length > 0 && (
-        <div className="flex flex-wrap gap-1">
-          {files.map((f) => (
-            <button
+      <div className="flex flex-wrap items-center gap-1">
+        {files.map((f, i) =>
+          editingFileId === f.id ? (
+            <div key={f.id} className="flex items-center gap-1 rounded-t-md border-x border-t bg-muted/40 px-1.5 py-1">
+              <Input
+                autoFocus
+                value={fileNameDraft}
+                onChange={(e) => setFileNameDraft(e.target.value)}
+                onKeyDown={(e) => {
+                  if (e.key === "Enter") {
+                    onRenameFile(f.id, fileNameDraft.trim() || f.name);
+                    setEditingFileId(null);
+                  }
+                  if (e.key === "Escape") setEditingFileId(null);
+                }}
+                className="h-6 w-28 text-xs"
+              />
+              <button type="button" onClick={() => { onRenameFile(f.id, fileNameDraft.trim() || f.name); setEditingFileId(null); }} aria-label="Save file name">
+                <Check className="h-3 w-3" />
+              </button>
+              <button type="button" onClick={() => setEditingFileId(null)} aria-label="Cancel rename">
+                <X className="h-3 w-3" />
+              </button>
+            </div>
+          ) : (
+            <div
               key={f.id}
-              type="button"
-              onClick={() => onSelectFile(f.id)}
-              className={`rounded-t-md border-x border-t px-3 py-1 text-xs font-medium ${f.id === activeFileId ? "bg-brand-plum-soft text-brand-plum" : "bg-muted/40 text-muted-foreground hover:bg-accent"}`}
+              className={`group flex items-center gap-1 rounded-t-md border-x border-t px-2 py-1 text-xs font-medium ${f.id === activeFileId ? "bg-brand-plum-soft text-brand-plum" : "bg-muted/40 text-muted-foreground hover:bg-accent"}`}
             >
-              {f.name}
-            </button>
-          ))}
-        </div>
-      )}
+              <button type="button" onClick={() => onSelectFile(f.id)}>{f.name}</button>
+              {f.id === activeFileId && (
+                <span className="flex items-center gap-0.5 opacity-0 group-hover:opacity-100">
+                  <button type="button" onClick={() => { setFileNameDraft(f.name); setEditingFileId(f.id); }} aria-label={`Rename ${f.name}`}>
+                    <Pencil className="h-3 w-3" />
+                  </button>
+                  {i > 0 && (
+                    <button type="button" onClick={() => onMoveFile(f.id, "up")} aria-label={`Move ${f.name} earlier`}>
+                      <ArrowLeft className="h-3 w-3" />
+                    </button>
+                  )}
+                  {i < files.length - 1 && (
+                    <button type="button" onClick={() => onMoveFile(f.id, "down")} aria-label={`Move ${f.name} later`}>
+                      <ArrowRight className="h-3 w-3" />
+                    </button>
+                  )}
+                  <button type="button" onClick={() => onRemoveFile(f.id)} aria-label={`Remove ${f.name}`}>
+                    <Trash2 className="h-3 w-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+          )
+        )}
+        <button type="button" onClick={onAddFile} className="flex items-center gap-1 rounded-t-md border-x border-t border-dashed px-2 py-1 text-xs text-muted-foreground hover:bg-accent" title="Add another file to this drawing">
+          <Plus className="h-3 w-3" /> Add file
+        </button>
+      </div>
     </div>
   );
 }

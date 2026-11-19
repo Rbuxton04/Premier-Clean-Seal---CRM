@@ -148,6 +148,11 @@ export type TakeoffItemInput = z.infer<typeof takeoffItemSchema>;
 export const takeoffMeasurementSchema = z.object({
   takeoffItemId: z.string().min(1),
   pageNumber: z.coerce.number().int().positive(),
+  // Which file (of the drawing's possibly several, see Drawings Part 1
+  // Step 4) this page number belongs to. Optional/nullable -- a null here
+  // means "the drawing's first file", the same safety-net convention
+  // documented on TakeoffMeasurement.takeoffFileId.
+  takeoffFileId: z.string().min(1).optional(),
   type: z.enum(takeoffMeasurementTypes),
   points: z.array(pointSchema).min(2, "A measurement needs at least two points"),
   label: z.string().optional(),
@@ -166,6 +171,20 @@ export type ScalePresetInput = z.infer<typeof scalePresetSchema>;
 // row has no takeoff of its own and carries its own sortOrder for the
 // rate-card page's reorder control.
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// Files (Drawings Part 1 Step 4) -- several PDFs per drawing, shown as tabs
+// ---------------------------------------------------------------------------
+
+export const takeoffFileCreateSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  fileUrl: z.string().min(1),
+  pageCount: z.coerce.number().int().positive().optional(),
+});
+export type TakeoffFileCreateInput = z.infer<typeof takeoffFileCreateSchema>;
+
+export const takeoffFileRenameSchema = z.object({ name: z.string().min(1, "Name is required") });
+export type TakeoffFileRenameInput = z.infer<typeof takeoffFileRenameSchema>;
 
 export const takeoffItemPresetSchema = z.object({
   name: z.string().min(1, "Name is required"),

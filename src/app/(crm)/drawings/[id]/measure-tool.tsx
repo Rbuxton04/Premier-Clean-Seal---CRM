@@ -15,6 +15,7 @@ import {
   createTakeoffItemAction, updateTakeoffItemAction, deleteTakeoffItemAction,
   updateTakeoffScaleAction, updateTakeoffDetailsAction, createScalePresetAction,
   addAllFromRateCardAction, saveItemAsPresetAction,
+  createTakeoffFileAction, renameTakeoffFileAction, moveTakeoffFileAction, removeTakeoffFileAction, countMeasurementsOnFileAction,
 } from "../actions";
 import { ItemsPanel } from "./items-panel";
 import { ScaleControls } from "./scale-controls";
@@ -53,6 +54,15 @@ export function MeasureTool({
   const workspace = useWorkspaceLayout();
   const [fullScreen, setFullScreen] = useState(false);
   const [drawingName, setDrawingName] = useState(takeoff.name);
+
+  // Files (Drawings Part 1 Step 4) -- a drawing can hold several PDFs,
+  // shown as tabs. Every pre-existing takeoff was backfilled to have
+  // exactly one by the migration, and createTakeoff now always creates
+  // one too, so files[0] should always exist in practice.
+  const [files, setFiles] = useState<TakeoffDetail["files"]>(takeoff.files);
+  const [activeFileId, setActiveFileId] = useState<string>(takeoff.files[0]?.id ?? "");
+  const [fileMessage, setFileMessage] = useState<string | null>(null);
+  const fileUploadInputRef = useRef<HTMLInputElement>(null);
 
   // The loaded document lives in STATE, not just a ref -- a ref write alone
   // never triggers a re-render, so the render effect below needs a state
@@ -109,13 +119,20 @@ export function MeasureTool({
   // trying to fetch a relative path when URL-resolution silently falls back
   // to the raw storage path.
   useEffect(() => {
+    if (!activeFileId) return;
     ensurePdfWorkerConfigured();
     let cancelled = false;
     setPdfError(null);
+    setPdfDoc(null);
+    setCurrentPage(1);
     (async () => {
       try {
         const pdfjsLib = await import("pdfjs-dist");
-        const doc = await pdfjsLib.getDocument({ url: `/api/takeoffs/${takeoff.id}/file`, disableRange: true, disableStream: true }).promise;
+        const doc = await pdfjsLib.getDocument({
+          url: `/api/takeoffs/${takeoff.id}/file?fileId=${activeFileId}`,
+          disableRange: true,
+          disableStream: true,
+        }).promise;
         if (cancelled) return;
         setPdfDoc(doc);
         setNumPages(doc.numPages);
@@ -126,7 +143,7 @@ export function MeasureTool({
     return () => {
       cancelled = true;
     };
-  }, [takeoff.id]);
+  }, [takeoff.id, activeFileId]);
 
   // --- Render the current page at the current zoom/rotation --------------
   // Renders onto a CANVAS CAPPED AT A MAXIMUM PIXEL AREA -- an oversized
@@ -379,7 +396,7 @@ export function MeasureTool({
     }
     const result = await createMeasurementAction(
       takeoff.id,
-      { takeoffItemId: selectedItemId, pageNumber: currentPage, type, points },
+      { takeoffItemId: selectedItemId, pageNumber: currentPage, takeoffFileId: activeFileId || undefined, type, points },
       pointsPerMetre
     );
     setDrawPoints([]);
@@ -393,7 +410,7 @@ export function MeasureTool({
         it.id === selectedItemId
           ? {
               ...it,
-              measurements: [...it.measurements, { id: result.data.id, pageNumber: currentPage, type, points, computedMetres: result.data.computedMetres, label: null }],
+              measurements: [...it.measurements, { id: result.data.id, pageNumber: currentPage, takeoffFileId: activeFileId || null, type, points, computedMetres: result.data.computedMetres, label: null }],
               totalMetres: +(it.totalMetres + result.data.computedMetres).toFixed(2),
               lineTotalGbp: +((it.totalMetres + result.data.computedMetres) * Number(it.pricePerMetre)).toFixed(2),
             }
@@ -643,6 +660,73 @@ export function MeasureTool({
     }
   }
 
+  // --- Files (Drawings Part 1 Step 4) -------------------------------------
+  async function handleAddFile(file: File) {
+    setFileMessage(null);
+    try {
+      const presignRes = await fetch("/api/uploads/presign", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ filename: file.name, contentType: file.type || "application/pdf" }),
+      });
+      const presign = await presignRes.json();
+      if (!presign.configured) {
+        setFileMessage("Storage isn't connected yet.");
+        return;
+      }
+      await fetch(presign.uploadUrl, { method: "PUT", headers: { "Content-Type": file.type || "application/pdf" }, body: file });
+      const result = await createTakeoffFileAction(takeoff.id, { name: file.name.replace(/\.pdf$/i, ""), fileUrl: presign.path });
+      if (!result.ok) {
+        setFileMessage(result.message);
+        return;
+      }
+      const newFile = { id: result.data.id, name: file.name.replace(/\.pdf$/i, ""), pageCount: null, pointsPerMetre: null, sortOrder: files.length };
+      setFiles((cur) => [...cur, newFile]);
+      setActiveFileId(newFile.id);
+    } catch {
+      setFileMessage("Upload failed -- please try again.");
+    }
+  }
+
+  async function handleRenameFile(fileId: string, name: string) {
+    setFiles((cur) => cur.map((f) => (f.id === fileId ? { ...f, name } : f)));
+    const result = await renameTakeoffFileAction(takeoff.id, fileId, { name });
+    if (!result.ok) setFileMessage(result.message);
+  }
+
+  async function handleMoveFile(fileId: string, direction: "up" | "down") {
+    const index = files.findIndex((f) => f.id === fileId);
+    const swapIndex = direction === "up" ? index - 1 : index + 1;
+    if (index === -1 || swapIndex < 0 || swapIndex >= files.length) return;
+    const next = [...files];
+    [next[index], next[swapIndex]] = [next[swapIndex], next[index]];
+    setFiles(next);
+    await moveTakeoffFileAction(takeoff.id, fileId, direction);
+  }
+
+  async function handleRemoveFile(fileId: string) {
+    if (files.length <= 1) {
+      setFileMessage("A drawing needs at least one file.");
+      return;
+    }
+    const countResult = await countMeasurementsOnFileAction(takeoff.id, fileId);
+    const count = countResult.ok ? countResult.data.count : 0;
+    const file = files.find((f) => f.id === fileId);
+    const confirmMessage =
+      count > 0
+        ? `Remove "${file?.name}"? ${count} measurement${count === 1 ? "" : "s"} on it will stay recorded but hidden until it's restored.`
+        : `Remove "${file?.name}"?`;
+    if (!window.confirm(confirmMessage)) return;
+
+    const result = await removeTakeoffFileAction(takeoff.id, fileId);
+    if (!result.ok) {
+      setFileMessage(result.message);
+      return;
+    }
+    setFiles((cur) => cur.filter((f) => f.id !== fileId));
+    if (activeFileId === fileId) setActiveFileId(files.find((f) => f.id !== fileId)?.id ?? "");
+  }
+
   /** The page's own (scale=1) size, derived from the last render rather than re-fetched -- viewportSize/renderScale is always that page's size at the CURRENT zoom. */
   function naturalPageSize(): { width: number; height: number } | null {
     if (!viewportSize.width || !viewportSize.height || !renderScale) return null;
@@ -671,7 +755,18 @@ export function MeasureTool({
 
   const totalMetres = +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2);
   const grandTotalGbp = +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2);
-  const pageMeasurements = items.flatMap((it) => it.measurements.filter((m) => m.pageNumber === currentPage).map((m) => ({ ...m, colour: it.colour, itemId: it.id })));
+  // A null takeoffFileId means "the first file" (the backfill/safety-net
+  // convention) -- matching on that here is essential once a drawing has
+  // more than one file, since different files can share the same
+  // pageNumber (page 1 of file A is a different physical page from page 1
+  // of file B) -- without this filter, switching tabs would show the
+  // other file's measurements overlaid on the wrong plan.
+  const firstFileId = files[0]?.id;
+  const pageMeasurements = items.flatMap((it) =>
+    it.measurements
+      .filter((m) => m.pageNumber === currentPage && (m.takeoffFileId ?? firstFileId) === activeFileId)
+      .map((m) => ({ ...m, colour: it.colour, itemId: it.id }))
+  );
   const drawingMetres = drawPoints.length > 0 ? chainLengthPoints(hoverPoint ? [...drawPoints, hoverPoint] : drawPoints) / pointsPerMetre : null;
 
   const panelContent: Record<PanelId, React.ReactNode> = {
@@ -717,7 +812,17 @@ export function MeasureTool({
         )}
       </div>
     ),
-    pages: <PagesPanel pdfDoc={pdfDoc} numPages={numPages} currentPage={currentPage} onJump={setCurrentPage} items={items} />,
+    pages: (
+      <PagesPanel
+        pdfDoc={pdfDoc}
+        numPages={numPages}
+        currentPage={currentPage}
+        onJump={setCurrentPage}
+        items={items}
+        activeFileId={activeFileId}
+        firstFileId={firstFileId}
+      />
+    ),
     search: <p className="text-xs text-muted-foreground">Search isn&apos;t available yet -- coming in a later update.</p>,
     selected: selectedMeasurement ? (
       <div className="space-y-2 text-sm">
@@ -755,12 +860,28 @@ export function MeasureTool({
 
   return (
     <div className={fullScreen ? "fixed inset-0 z-40 flex flex-col gap-2 overflow-auto bg-background p-3" : "flex flex-col gap-2"}>
+      <input
+        ref={fileUploadInputRef}
+        type="file"
+        accept="application/pdf"
+        className="hidden"
+        onChange={(e) => {
+          const f = e.target.files?.[0];
+          if (f) handleAddFile(f);
+          e.target.value = "";
+        }}
+      />
+      {fileMessage && <p className="text-sm text-destructive">{fileMessage}</p>}
       <TopBar
         name={drawingName}
         onRename={handleRename}
-        files={[{ id: takeoff.id, name: "Plan" }]}
-        activeFileId={takeoff.id}
-        onSelectFile={() => {}}
+        files={files}
+        activeFileId={activeFileId}
+        onSelectFile={setActiveFileId}
+        onAddFile={() => fileUploadInputRef.current?.click()}
+        onRenameFile={handleRenameFile}
+        onMoveFile={handleMoveFile}
+        onRemoveFile={handleRemoveFile}
         currentPage={currentPage}
         numPages={numPages}
         onPrevPage={() => setCurrentPage((p) => Math.max(1, p - 1))}

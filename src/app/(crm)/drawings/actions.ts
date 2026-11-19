@@ -3,7 +3,9 @@
 import { revalidatePath } from "next/cache";
 import {
   takeoffCreateSchema, takeoffItemSchema, takeoffMeasurementSchema, takeoffScaleSchema, scalePresetSchema, takeoffItemPresetSchema,
+  takeoffFileCreateSchema, takeoffFileRenameSchema,
   type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type TakeoffScaleInput, type ScalePresetInput, type TakeoffItemPresetInput,
+  type TakeoffFileCreateInput, type TakeoffFileRenameInput,
 } from "@/validators/takeoff";
 import * as TakeoffService from "@/services/takeoff.service";
 import * as ScalePresetService from "@/services/scale-preset.service";
@@ -279,6 +281,67 @@ export async function saveItemAsPresetAction(name: string, colour: string, price
     const result = await RateCardService.upsertRateCardItemByName(name, colour, pricePerMetre);
     revalidatePath("/drawings/rate-card");
     return { ok: true, data: { created: result.created } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Files (Drawings Part 1 Step 4)
+// ---------------------------------------------------------------------------
+
+export async function createTakeoffFileAction(takeoffId: string, input: TakeoffFileCreateInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requirePermission("takeoffs", "update");
+    const parsed = takeoffFileCreateSchema.parse(input);
+    const file = await TakeoffService.createTakeoffFile(takeoffId, parsed);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: file };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function renameTakeoffFileAction(takeoffId: string, fileId: string, input: TakeoffFileRenameInput): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffs", "update");
+    const parsed = takeoffFileRenameSchema.parse(input);
+    await TakeoffService.renameTakeoffFile(fileId, parsed.name);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function moveTakeoffFileAction(takeoffId: string, fileId: string, direction: "up" | "down"): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffs", "update");
+    await TakeoffService.moveTakeoffFile(takeoffId, fileId, direction);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** Confirm-dialog support -- lets the UI say "this file has N measurements" before the user confirms removing it. */
+export async function countMeasurementsOnFileAction(takeoffId: string, fileId: string): Promise<ActionResult<{ count: number }>> {
+  try {
+    await requirePermission("takeoffs", "read");
+    const count = await TakeoffService.countMeasurementsOnFile(takeoffId, fileId);
+    return { ok: true, data: { count } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function removeTakeoffFileAction(takeoffId: string, fileId: string): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffs", "update");
+    await TakeoffService.softDeleteTakeoffFile(fileId);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
   }
