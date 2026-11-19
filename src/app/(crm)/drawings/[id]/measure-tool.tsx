@@ -26,6 +26,7 @@ import { StatusBar } from "./workspace/status-bar";
 import { WorkspaceTray } from "./workspace/workspace-tray";
 import { MobileWorkspaceBar } from "./workspace/mobile-workspace-bar";
 import { PagesPanel } from "./workspace/pages-panel";
+import { SearchPanel, type SearchResult } from "./workspace/search-panel";
 import { useWorkspaceLayout, type PanelId } from "./workspace/use-workspace-layout";
 import type { ActiveTool } from "./workspace/types";
 
@@ -63,6 +64,19 @@ export function MeasureTool({
   const [activeFileId, setActiveFileId] = useState<string>(takeoff.files[0]?.id ?? "");
   const [fileMessage, setFileMessage] = useState<string | null>(null);
   const fileUploadInputRef = useRef<HTMLInputElement>(null);
+
+  // --- Search (Drawings Part 1 Step 5) -------------------------------------
+  // Indexed lazily (only once a search actually runs, never on panel open)
+  // and cached per file for the rest of the session -- a plain ref, not
+  // React state, since the cache itself never needs to trigger a re-render.
+  const searchIndexRef = useRef<Map<string, { pageNumber: number; items: { text: string; minX: number; minY: number; maxX: number; maxY: number }[] }[]>>(new Map());
+  const [searchQuery, setSearchQuery] = useState("");
+  const [searching, setSearching] = useState(false);
+  const [searchResults, setSearchResults] = useState<SearchResult[]>([]);
+  const [activeResultIndex, setActiveResultIndex] = useState(-1);
+  const [noSearchableText, setNoSearchableText] = useState(false);
+  const [highlightActive, setHighlightActive] = useState(false);
+  const highlightTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // The loaded document lives in STATE, not just a ref -- a ref write alone
   // never triggers a re-render, so the render effect below needs a state
@@ -727,6 +741,98 @@ export function MeasureTool({
     if (activeFileId === fileId) setActiveFileId(files.find((f) => f.id !== fileId)?.id ?? "");
   }
 
+  /**
+   * Extracts and caches one file's per-page text (and each text item's
+   * bounding box, already converted into the same baseline/scale-1 device
+   * space every stored measurement point is in -- see pointToScreen --
+   * so a later highlight can reuse that same, already-proven conversion
+   * instead of a separate one). Opens its own short-lived pdf.js document
+   * rather than reusing the viewer's -- pdf.js documents are independent
+   * as long as each gets its own byte fetch, so indexing a file that
+   * isn't the one currently open doesn't disturb the viewer at all.
+   */
+  async function indexFileForSearch(fileId: string): Promise<void> {
+    if (searchIndexRef.current.has(fileId)) return;
+    const pdfjsLib = await import("pdfjs-dist");
+    const doc = await pdfjsLib.getDocument({ url: `/api/takeoffs/${takeoff.id}/file?fileId=${fileId}`, disableRange: true, disableStream: true }).promise;
+    try {
+      const pages: { pageNumber: number; items: { text: string; minX: number; minY: number; maxX: number; maxY: number }[] }[] = [];
+      for (let n = 1; n <= doc.numPages; n++) {
+        const page = await doc.getPage(n);
+        const baseViewport = page.getViewport({ scale: 1 });
+        const textContent = await page.getTextContent();
+        const items = (textContent.items as Array<{ str?: string; transform: number[]; width: number; height: number }>)
+          .filter((it): it is { str: string; transform: number[]; width: number; height: number } => Boolean(it.str && it.str.trim().length > 0))
+          .map((it) => {
+            const [, , , , e, f] = it.transform;
+            const p0 = baseViewport.convertToViewportPoint(e, f);
+            const p1 = baseViewport.convertToViewportPoint(e + it.width, f + (it.height || 10));
+            return {
+              text: it.str,
+              minX: Math.min(p0[0], p1[0]), minY: Math.min(p0[1], p1[1]),
+              maxX: Math.max(p0[0], p1[0]), maxY: Math.max(p0[1], p1[1]),
+            };
+          });
+        pages.push({ pageNumber: n, items });
+      }
+      searchIndexRef.current.set(fileId, pages);
+    } finally {
+      await doc.destroy();
+    }
+  }
+
+  async function runSearch(query: string) {
+    setSearchQuery(query);
+    setActiveResultIndex(-1);
+    setHighlightActive(false);
+    if (!query.trim()) {
+      setSearchResults([]);
+      setNoSearchableText(false);
+      return;
+    }
+    setSearching(true);
+    try {
+      await Promise.all(files.map((f) => indexFileForSearch(f.id)));
+      const hasAnyText = files.some((f) => (searchIndexRef.current.get(f.id) ?? []).some((p) => p.items.length > 0));
+      setNoSearchableText(!hasAnyText);
+
+      const q = query.toLowerCase();
+      const results: SearchResult[] = [];
+      for (const file of files) {
+        for (const page of searchIndexRef.current.get(file.id) ?? []) {
+          const fullText = page.items.map((i) => i.text).join(" ");
+          const idx = fullText.toLowerCase().indexOf(q);
+          if (idx === -1) continue;
+          const snippet = fullText.slice(Math.max(0, idx - 25), idx + q.length + 25).trim();
+          results.push({ fileId: file.id, fileName: file.name, pageNumber: page.pageNumber, snippet });
+        }
+      }
+      setSearchResults(results);
+    } finally {
+      setSearching(false);
+    }
+  }
+
+  function jumpToResult(result: SearchResult, index: number) {
+    if (activeFileId !== result.fileId) setActiveFileId(result.fileId);
+    setCurrentPage(result.pageNumber);
+    setActiveResultIndex(index);
+    setHighlightActive(true);
+    if (highlightTimerRef.current) clearTimeout(highlightTimerRef.current);
+    highlightTimerRef.current = setTimeout(() => setHighlightActive(false), 2500);
+  }
+
+  function nextResult() {
+    if (searchResults.length === 0) return;
+    jumpToResult(searchResults[(activeResultIndex + 1) % searchResults.length], (activeResultIndex + 1) % searchResults.length);
+  }
+
+  function previousResult() {
+    if (searchResults.length === 0) return;
+    const next = (activeResultIndex - 1 + searchResults.length) % searchResults.length;
+    jumpToResult(searchResults[next], next);
+  }
+
   /** The page's own (scale=1) size, derived from the last render rather than re-fetched -- viewportSize/renderScale is always that page's size at the CURRENT zoom. */
   function naturalPageSize(): { width: number; height: number } | null {
     if (!viewportSize.width || !viewportSize.height || !renderScale) return null;
@@ -768,6 +874,21 @@ export function MeasureTool({
       .map((m) => ({ ...m, colour: it.colour, itemId: it.id }))
   );
   const drawingMetres = drawPoints.length > 0 ? chainLengthPoints(hoverPoint ? [...drawPoints, hoverPoint] : drawPoints) / pointsPerMetre : null;
+
+  // Highlight boxes for the current search match, converted through the
+  // SAME pointToScreen used for measurements -- so they land correctly at
+  // any zoom, pan or view rotation with no separate math of their own.
+  const highlightBoxes =
+    highlightActive && searchQuery.trim()
+      ? (searchIndexRef.current.get(activeFileId) ?? [])
+          .find((p) => p.pageNumber === currentPage)
+          ?.items.filter((it) => it.text.toLowerCase().includes(searchQuery.trim().toLowerCase()))
+          .map((it) => {
+            const topLeft = pointToScreen({ x: it.minX, y: it.minY });
+            const bottomRight = pointToScreen({ x: it.maxX, y: it.maxY });
+            return { x: Math.min(topLeft.x, bottomRight.x), y: Math.min(topLeft.y, bottomRight.y), width: Math.abs(bottomRight.x - topLeft.x), height: Math.abs(bottomRight.y - topLeft.y) };
+          }) ?? []
+      : [];
 
   const panelContent: Record<PanelId, React.ReactNode> = {
     items: (
@@ -823,7 +944,19 @@ export function MeasureTool({
         firstFileId={firstFileId}
       />
     ),
-    search: <p className="text-xs text-muted-foreground">Search isn&apos;t available yet -- coming in a later update.</p>,
+    search: (
+      <SearchPanel
+        query={searchQuery}
+        onQueryChange={runSearch}
+        searching={searching}
+        results={searchResults}
+        activeResultIndex={activeResultIndex}
+        noSearchableText={noSearchableText}
+        onJumpToResult={jumpToResult}
+        onNext={nextResult}
+        onPrevious={previousResult}
+      />
+    ),
     selected: selectedMeasurement ? (
       <div className="space-y-2 text-sm">
         <span className="text-xs text-muted-foreground">Label</span>
@@ -980,6 +1113,9 @@ export function MeasureTool({
                   {calibrationPoints.length === 1 && hoverPoint && (
                     <line x1={pointToScreen(calibrationPoints[0]).x} y1={pointToScreen(calibrationPoints[0]).y} x2={pointToScreen(hoverPoint).x} y2={pointToScreen(hoverPoint).y} stroke="#B91C1C" strokeWidth={2} strokeDasharray="4 4" />
                   )}
+                  {highlightBoxes.map((box, i) => (
+                    <rect key={i} x={box.x - 2} y={box.y - 2} width={box.width + 4} height={box.height + 4} fill="#FDE68A" fillOpacity={0.6} stroke="#CA8A04" strokeWidth={1.5} />
+                  ))}
                 </svg>
               </div>
             </div>
