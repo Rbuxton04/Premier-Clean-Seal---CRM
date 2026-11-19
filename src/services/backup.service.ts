@@ -20,7 +20,7 @@ async function snapshotAllTables() {
     mediaFiles, warranties, invoices, reminders, campaigns, timelineEvents,
     communications, healthScores, insightReports, auditLogs, portalTokens, pendingAiTasks,
     hotelGroups, hotelProperties, rooms, roomVisits, roomVisitPhotos, certifications,
-    scalePresets, takeoffs, takeoffItems, takeoffMeasurements,
+    scalePresets, takeoffs, takeoffItems, takeoffMeasurements, takeoffItemPresets,
     customerTagRows,
     // WeatherCache is deliberately left out -- it's only a geocoded-forecast
     // cache (keyed by lat/lng/date, not org-scoped), not business data, and
@@ -62,6 +62,7 @@ async function snapshotAllTables() {
     db.takeoff.findMany(),
     db.takeoffItem.findMany(),
     db.takeoffMeasurement.findMany(),
+    db.takeoffItemPreset.findMany(),
     // The Customer<->Tag link is an implicit many-to-many join table (see
     // the @relation("CustomerTags") on Customer.tags / Tag.customers in
     // schema.prisma) -- Prisma has no findMany() for it directly, so it's
@@ -78,7 +79,7 @@ async function snapshotAllTables() {
     mediaFiles, warranties, invoices, reminders, campaigns, timelineEvents,
     communications, healthScores, insightReports, auditLogs, portalTokens, pendingAiTasks,
     hotelGroups, hotelProperties, rooms, roomVisits, roomVisitPhotos, certifications,
-    scalePresets, takeoffs, takeoffItems, takeoffMeasurements,
+    scalePresets, takeoffs, takeoffItems, takeoffMeasurements, takeoffItemPresets,
     customerTags,
   };
 }

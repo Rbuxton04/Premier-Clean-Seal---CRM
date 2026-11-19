@@ -159,3 +159,17 @@ export const scalePresetSchema = z.object({
   ratio: z.coerce.number().int().positive(),
 });
 export type ScalePresetInput = z.infer<typeof scalePresetSchema>;
+
+// ---------------------------------------------------------------------------
+// Rate card (Phase 2, Part B) -- reusable item presets, picked from when
+// adding an item to a takeoff. Separate from TakeoffItemInput: a rate card
+// row has no takeoff of its own and carries its own sortOrder for the
+// rate-card page's reorder control.
+// ---------------------------------------------------------------------------
+
+export const takeoffItemPresetSchema = z.object({
+  name: z.string().min(1, "Name is required"),
+  colour: z.string().min(1),
+  pricePerMetre: z.coerce.number().nonnegative(),
+});
+export type TakeoffItemPresetInput = z.infer<typeof takeoffItemPresetSchema>;

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Copy, FileText, Check } from "lucide-react";
+import { Copy, FileText, Check, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { formatGBP } from "@/lib/utils";
 import type { TakeoffItemDetail } from "@/services/takeoff.service";
@@ -32,6 +32,8 @@ function buildTableText(items: TakeoffItemDetail[], grandTotalGbp: number): stri
 
 export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: string; items: TakeoffItemDetail[]; grandTotalGbp: number }) {
   const [copied, setCopied] = useState<"list" | "table" | null>(null);
+  const [exportPrices, setExportPrices] = useState(true);
+  const [exportPages, setExportPages] = useState<"measured" | "all">("measured");
 
   async function copyList() {
     await navigator.clipboard.writeText(buildListText(items, grandTotalGbp));
@@ -72,6 +74,20 @@ export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: 
         <Link href={`/quotes/new?takeoffId=${takeoffId}`}>
           <FileText className="h-3.5 w-3.5" /> Create quote from takeoff
         </Link>
+      </Button>
+
+      <div className="mx-1 h-5 w-px bg-border" />
+
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <input type="checkbox" checked={exportPrices} onChange={(e) => setExportPrices(e.target.checked)} /> Prices
+      </label>
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <input type="checkbox" checked={exportPages === "all"} onChange={(e) => setExportPages(e.target.checked ? "all" : "measured")} /> All pages
+      </label>
+      <Button type="button" size="sm" variant="outline" disabled={!hasMetres} asChild>
+        <a href={`/api/takeoffs/${takeoffId}/export?prices=${exportPrices ? "1" : "0"}&pages=${exportPages}`}>
+          <Download className="h-3.5 w-3.5" /> Download marked-up plan
+        </a>
       </Button>
     </div>
   );

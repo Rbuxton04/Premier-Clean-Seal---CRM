@@ -49,12 +49,15 @@ backup you can trust.
    (`customers`, `quotes`, `jobs`, `invoices`, `mediaFiles`, `hotelGroups`,
    `hotelProperties`, `rooms`, `roomVisits`, `roomVisitPhotos`,
    `certifications`, `scalePresets`, `takeoffs`, `takeoffItems`,
-   `takeoffMeasurements`, ...), each an array of the rows Prisma would
+   `takeoffMeasurements`, `takeoffItemPresets` (the rate card -- independent
+   of any takeoff; see the schema comment on `TakeoffItemPreset`), ...), each an array of the rows Prisma would
    return from `findMany()` — plus one special key, `customerTags` (see
    below). Restore `takeoffs` before `takeoffItems` before
    `takeoffMeasurements` (each references the one before it by id), same
    as `hotelGroups` before `hotelProperties` before `rooms` before
-   `roomVisits` before `roomVisitPhotos`.
+   `roomVisits` before `roomVisitPhotos`. `takeoffItemPresets` (the rate
+   card) has no foreign key to any of those -- restore it any time after
+   `organisations`.
 4. To actually restore into a scratch database: spin up a throwaway Postgres
    (e.g. a local Docker container or a new free Render Postgres) — confirm
    its URL points to localhost/a disposable instance, never a real

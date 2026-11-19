@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { Plus, Ruler } from "lucide-react";
+import { Plus, Ruler, ListOrdered } from "lucide-react";
 import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -29,9 +29,14 @@ export default async function MeasurePage() {
             Measure linear metres directly off a floor-plan PDF, price it by item, and turn it straight into a quote.
           </p>
         </div>
-        <Button asChild>
-          <Link href="/measure/new"><Plus className="h-4 w-4" /> New takeoff</Link>
-        </Button>
+        <div className="flex gap-2">
+          <Button asChild variant="outline">
+            <Link href="/measure/rate-card"><ListOrdered className="h-4 w-4" /> Rate card</Link>
+          </Button>
+          <Button asChild>
+            <Link href="/measure/new"><Plus className="h-4 w-4" /> New takeoff</Link>
+          </Button>
+        </div>
       </div>
 
       {!dbOnline && (

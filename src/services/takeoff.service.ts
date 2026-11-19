@@ -136,6 +136,46 @@ export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
   };
 }
 
+export type TakeoffExportDetail = {
+  id: string;
+  name: string;
+  /** The RAW storage path, not a signed URL -- the export route downloads the source bytes server-side via downloadObject(), it never needs a browser-facing link. */
+  pdfFilePath: string;
+  customer: { id: string; name: string; company: string | null } | null;
+  pointsPerMetre: number;
+  scaleRatioLabel: string | null;
+  items: TakeoffItemDetail[];
+  totalMetres: number;
+  grandTotalGbp: number;
+  createdAt: Date;
+};
+
+/** Same shape as getTakeoff(), but with the takeoff's raw PDF storage path instead of a resolved signed URL -- for the marked-up-plan export route, which reads the source file itself server-side. */
+export async function getTakeoffForExport(id: string): Promise<TakeoffExportDetail | null> {
+  const row = await db.takeoff.findFirst({
+    where: { id, organisationId: ORG_ID, deletedAt: null },
+    include: {
+      customer: { select: { id: true, name: true, company: true } },
+      items: { orderBy: { sortOrder: "asc" }, include: { measurements: { orderBy: { createdAt: "asc" } } } },
+    },
+  });
+  if (!row) return null;
+
+  const items = row.items.map(summariseItem);
+  return {
+    id: row.id,
+    name: row.name,
+    pdfFilePath: row.pdfFileUrl,
+    customer: row.customer,
+    pointsPerMetre: row.pointsPerMetre,
+    scaleRatioLabel: row.scaleRatioLabel,
+    items,
+    totalMetres: +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2),
+    grandTotalGbp: +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2),
+    createdAt: row.createdAt,
+  };
+}
+
 // ---------------------------------------------------------------------------
 // Takeoff CRUD
 // ---------------------------------------------------------------------------

@@ -53,6 +53,7 @@ model Organisation {
   certifications  Certification[]
   takeoffs        Takeoff[]
   scalePresets    ScalePreset[]
+  takeoffItemPresets TakeoffItemPreset[]
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -1177,4 +1178,33 @@ model TakeoffMeasurement {
   createdAt DateTime @default(now())
 
   @@index([takeoffItemId])
+}
+
+// The reusable rate card (Measuring tool Phase 2, Part B) -- set up once,
+// picked from when adding an item to a takeoff. A TakeoffItem keeps its own
+// copy of name/colour/pricePerMetre at the time it was added (unchanged from
+// Phase 1), so editing or deleting a preset here never touches any existing
+// takeoff or quote -- this table is only ever read from when creating a NEW
+// TakeoffItem.
+model TakeoffItemPreset {
+  id             String  @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  name          String
+  colour        String
+  pricePerMetre Decimal @db.Decimal(10, 2)
+  sortOrder     Int     @default(0)
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  // Soft delete -- mirrors Certification.deletedAt. Uniqueness of `name`
+  // among non-deleted rows is enforced in takeoff-rate-card.service.ts, not
+  // as a DB constraint -- Prisma 5's schema syntax has no partial-unique-
+  // index attribute, and a plain @@unique on (organisationId, name) would
+  // wrongly block re-using a name after its old preset was soft-deleted.
+  deletedAt   DateTime?
+  deletedById String?
+
+  @@index([organisationId, deletedAt])
 }

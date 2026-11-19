@@ -100,9 +100,17 @@ export default async function DocumentsPage({
                     <TableCell>{new Date(d.createdAt).toLocaleDateString("en-GB")}</TableCell>
                     <TableCell>
                       {d.category === "TAKEOFF" ? (
-                        <a href={d.url} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
-                          Open
-                        </a>
+                        <span className="inline-flex items-center gap-2">
+                          <a href={d.url} className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
+                            Open
+                          </a>
+                          <a
+                            href={`/api/takeoffs/${d.id.replace("takeoff-", "")}/export`}
+                            className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
+                          >
+                            <FileDown className="h-3.5 w-3.5" /> Download PDF
+                          </a>
+                        </span>
                       ) : (
                         <a href={d.url} target="_blank" rel="noreferrer" className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline">
                           <FileDown className="h-3.5 w-3.5" /> Download

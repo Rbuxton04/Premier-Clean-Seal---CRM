@@ -1,39 +1,77 @@
 "use client";
 
 import { useState } from "react";
-import { Plus, Trash2, Check } from "lucide-react";
+import Link from "next/link";
+import { Plus, Trash2, Check, ListOrdered, BookmarkPlus, Layers } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/select";
 import { formatGBP, cn } from "@/lib/utils";
 import { takeoffItemColourPalette, DEFAULT_ITEM_RATE_PER_METRE_GBP } from "@/validators/takeoff";
 import type { TakeoffItemDetail } from "@/services/takeoff.service";
+import type { RateCardItem } from "@/services/takeoff-rate-card.service";
 
 export type ItemsPanelProps = {
   items: TakeoffItemDetail[];
+  rateCardItems: RateCardItem[];
   selectedItemId: string | null;
   onSelectItem: (id: string) => void;
   onCreateItem: (name: string, colour: string, pricePerMetre: number) => Promise<void>;
   onUpdateItemRate: (id: string, pricePerMetre: number) => Promise<void>;
   onDeleteItem: (id: string) => Promise<void>;
+  onAddAllFromRateCard: () => Promise<void>;
+  onSaveItemToRateCard: (item: TakeoffItemDetail) => Promise<void>;
   totalMetres: number;
   grandTotalGbp: number;
 };
 
-export function ItemsPanel({ items, selectedItemId, onSelectItem, onCreateItem, onUpdateItemRate, onDeleteItem, totalMetres, grandTotalGbp }: ItemsPanelProps) {
+export function ItemsPanel({
+  items, rateCardItems, selectedItemId, onSelectItem, onCreateItem, onUpdateItemRate, onDeleteItem,
+  onAddAllFromRateCard, onSaveItemToRateCard, totalMetres, grandTotalGbp,
+}: ItemsPanelProps) {
   const [adding, setAdding] = useState(false);
+  const [source, setSource] = useState<"rateCard" | "custom">(rateCardItems.length > 0 ? "rateCard" : "custom");
+  const [pickedPresetId, setPickedPresetId] = useState(rateCardItems[0]?.id ?? "");
   const [newName, setNewName] = useState("");
   const [newColour, setNewColour] = useState<string>(takeoffItemColourPalette[items.length % takeoffItemColourPalette.length]);
   const [newRate, setNewRate] = useState(String(DEFAULT_ITEM_RATE_PER_METRE_GBP));
   const [pending, setPending] = useState(false);
+  const [addingAll, setAddingAll] = useState(false);
+  const [message, setMessage] = useState<string | null>(null);
 
-  async function submitNewItem() {
+  function resetAddForm() {
+    setAdding(false);
+    setNewName("");
+    setNewRate(String(DEFAULT_ITEM_RATE_PER_METRE_GBP));
+  }
+
+  async function submitFromRateCard() {
+    const preset = rateCardItems.find((p) => p.id === pickedPresetId);
+    if (!preset) return;
+    setPending(true);
+    await onCreateItem(preset.name, preset.colour, Number(preset.pricePerMetre));
+    setPending(false);
+    resetAddForm();
+  }
+
+  async function submitCustomItem() {
     if (!newName.trim()) return;
     setPending(true);
     await onCreateItem(newName.trim(), newColour, Number(newRate) || 0);
     setPending(false);
-    setAdding(false);
-    setNewName("");
-    setNewRate(String(DEFAULT_ITEM_RATE_PER_METRE_GBP));
+    resetAddForm();
+  }
+
+  async function handleAddAll() {
+    setAddingAll(true);
+    await onAddAllFromRateCard();
+    setAddingAll(false);
+  }
+
+  async function handleSaveToRateCard(item: TakeoffItemDetail) {
+    await onSaveItemToRateCard(item);
+    setMessage(`Saved "${item.name}" to the rate card.`);
+    setTimeout(() => setMessage(null), 3000);
   }
 
   return (
@@ -47,28 +85,67 @@ export function ItemsPanel({ items, selectedItemId, onSelectItem, onCreateItem, 
         )}
       </div>
 
+      <div className="flex flex-wrap items-center gap-2 text-xs">
+        <Button type="button" size="sm" variant="outline" disabled={rateCardItems.length === 0 || addingAll} onClick={handleAddAll}>
+          <Layers className="h-3.5 w-3.5" /> {addingAll ? "Adding…" : "Add all from rate card"}
+        </Button>
+        <Link href="/measure/rate-card" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+          <ListOrdered className="h-3.5 w-3.5" /> Manage rate card
+        </Link>
+      </div>
+      {message && <p className="text-xs text-brand-plum">{message}</p>}
+
       {adding && (
         <div className="space-y-2 rounded-md border bg-muted/30 p-2.5">
-          <Input autoFocus placeholder="Item name (e.g. Floors)" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-sm" />
-          <div className="flex items-center gap-2">
-            <input type="color" value={newColour} onChange={(e) => setNewColour(e.target.value)} className="h-8 w-10 rounded border" aria-label="Colour" />
-            <div className="flex flex-wrap gap-1">
-              {takeoffItemColourPalette.map((c) => (
-                <button key={c} type="button" onClick={() => setNewColour(c)} className="h-5 w-5 rounded-full border" style={{ backgroundColor: c }} aria-label={c} />
-              ))}
+          {rateCardItems.length > 0 && (
+            <div className="flex gap-1 rounded-md bg-muted p-0.5 text-xs">
+              <button type="button" onClick={() => setSource("rateCard")} className={cn("flex-1 rounded px-2 py-1", source === "rateCard" ? "bg-card font-medium shadow-sm" : "text-muted-foreground")}>
+                From rate card
+              </button>
+              <button type="button" onClick={() => setSource("custom")} className={cn("flex-1 rounded px-2 py-1", source === "custom" ? "bg-card font-medium shadow-sm" : "text-muted-foreground")}>
+                Custom item
+              </button>
             </div>
-          </div>
-          <div className="flex items-center gap-2">
-            <span className="text-xs text-muted-foreground">£</span>
-            <Input type="number" step="0.01" min="0" value={newRate} onChange={(e) => setNewRate(e.target.value)} className="h-8 w-24 text-sm" />
-            <span className="text-xs text-muted-foreground">/ m</span>
-          </div>
-          <div className="flex gap-2">
-            <Button type="button" size="sm" disabled={pending || !newName.trim()} onClick={submitNewItem}>
-              {pending ? "Adding…" : "Add"}
-            </Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setAdding(false)}>Cancel</Button>
-          </div>
+          )}
+
+          {source === "rateCard" && rateCardItems.length > 0 ? (
+            <>
+              <Select value={pickedPresetId} onChange={(e) => setPickedPresetId(e.target.value)} className="h-9 text-sm">
+                {rateCardItems.map((p) => (
+                  <option key={p.id} value={p.id}>{p.name} — {formatGBP(Number(p.pricePerMetre))}/m</option>
+                ))}
+              </Select>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" disabled={pending || !pickedPresetId} onClick={submitFromRateCard}>
+                  {pending ? "Adding…" : "Add"}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={resetAddForm}>Cancel</Button>
+              </div>
+            </>
+          ) : (
+            <>
+              <Input autoFocus placeholder="Item name (e.g. Floors)" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-sm" />
+              <div className="flex items-center gap-2">
+                <input type="color" value={newColour} onChange={(e) => setNewColour(e.target.value)} className="h-8 w-10 rounded border" aria-label="Colour" />
+                <div className="flex flex-wrap gap-1">
+                  {takeoffItemColourPalette.map((c) => (
+                    <button key={c} type="button" onClick={() => setNewColour(c)} className="h-5 w-5 rounded-full border" style={{ backgroundColor: c }} aria-label={c} />
+                  ))}
+                </div>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="text-xs text-muted-foreground">£</span>
+                <Input type="number" step="0.01" min="0" value={newRate} onChange={(e) => setNewRate(e.target.value)} className="h-8 w-24 text-sm" />
+                <span className="text-xs text-muted-foreground">/ m</span>
+              </div>
+              <div className="flex gap-2">
+                <Button type="button" size="sm" disabled={pending || !newName.trim()} onClick={submitCustomItem}>
+                  {pending ? "Adding…" : "Add"}
+                </Button>
+                <Button type="button" size="sm" variant="ghost" onClick={resetAddForm}>Cancel</Button>
+              </div>
+            </>
+          )}
         </div>
       )}
 
@@ -96,7 +173,10 @@ export function ItemsPanel({ items, selectedItemId, onSelectItem, onCreateItem, 
                 <RateInput value={Number(item.pricePerMetre)} onCommit={(v) => onUpdateItemRate(item.id, v)} />
                 <span>/m =</span>
                 <span className="font-medium text-foreground">{formatGBP(item.lineTotalGbp)}</span>
-                <button type="button" onClick={() => onDeleteItem(item.id)} className="ml-auto text-muted-foreground hover:text-destructive" aria-label={`Delete ${item.name}`}>
+                <button type="button" onClick={() => handleSaveToRateCard(item)} className="ml-auto text-muted-foreground hover:text-brand-plum" aria-label={`Save ${item.name} to rate card`} title="Save to rate card">
+                  <BookmarkPlus className="h-3.5 w-3.5" />
+                </button>
+                <button type="button" onClick={() => onDeleteItem(item.id)} className="text-muted-foreground hover:text-destructive" aria-label={`Delete ${item.name}`}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>

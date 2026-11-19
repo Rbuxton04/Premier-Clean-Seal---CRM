@@ -12,6 +12,7 @@ export type Resource =
   | "properties"
   | "certifications"
   | "takeoffs"
+  | "takeoffRateCard"
   | "invoices"
   | "financials"
   | "materials"
@@ -47,6 +48,11 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     // "delete" is deliberately absent here even for OFFICE.
     certifications: ["read", "create", "update"],
     takeoffs: ["read", "create", "update", "delete"],
+    // Admin + Office can edit the rate card; every other role is view-only
+    // (checked in the rate-card page/actions) -- editing it never touches
+    // an existing takeoff's items, since TakeoffItem already snapshots its
+    // own name/colour/pricePerMetre at the time it was added.
+    takeoffRateCard: ["read", "create", "update", "delete"],
     invoices: ["read", "create", "update"],
     financials: ["read"],
     materials: ["read", "create", "update", "delete"],
@@ -68,6 +74,10 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     // The measuring/estimating tool is squarely an estimator's job --
     // full access, same as quotes above.
     takeoffs: ["read", "create", "update", "delete"],
+    // View-only -- picking from the rate card is squarely an estimator
+    // action (covered by "takeoffs":"update" on the owning takeoff), but
+    // editing the shared rate card itself is Admin/Office territory.
+    takeoffRateCard: ["read"],
     financials: ["read"],
     materials: ["read"],
     gallery: ["read", "create"],
@@ -102,6 +112,7 @@ export const DEFAULT_PERMISSIONS: Record<Role, Partial<Record<Resource, Action[]
     properties: ["read"],
     certifications: ["read"],
     takeoffs: ["read"],
+    takeoffRateCard: ["read"],
     invoices: ["read"],
     financials: ["read"],
     materials: ["read"],

@@ -2,11 +2,12 @@
 
 import { revalidatePath } from "next/cache";
 import {
-  takeoffCreateSchema, takeoffItemSchema, takeoffMeasurementSchema, takeoffScaleSchema, scalePresetSchema,
-  type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type TakeoffScaleInput, type ScalePresetInput,
+  takeoffCreateSchema, takeoffItemSchema, takeoffMeasurementSchema, takeoffScaleSchema, scalePresetSchema, takeoffItemPresetSchema,
+  type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type TakeoffScaleInput, type ScalePresetInput, type TakeoffItemPresetInput,
 } from "@/validators/takeoff";
 import * as TakeoffService from "@/services/takeoff.service";
 import * as ScalePresetService from "@/services/scale-preset.service";
+import * as RateCardService from "@/services/takeoff-rate-card.service";
 import { requirePermission, requireAdmin, ForbiddenError } from "@/lib/permissions";
 import { actorContext, writeAudit } from "@/lib/audit";
 import type { RecordActionResult } from "@/components/record-action-button";
@@ -190,6 +191,94 @@ export async function deleteScalePresetAction(id: string): Promise<ActionResult>
     await ScalePresetService.deleteScalePreset(id);
     revalidatePath("/measure");
     return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Rate card (Phase 2, Part B)
+// ---------------------------------------------------------------------------
+
+export async function createRateCardItemAction(input: TakeoffItemPresetInput): Promise<ActionResult<{ id: string }>> {
+  try {
+    await requirePermission("takeoffRateCard", "create");
+    const parsed = takeoffItemPresetSchema.parse(input);
+    const item = await RateCardService.createRateCardItem(parsed);
+    revalidatePath("/measure/rate-card");
+    return { ok: true, data: item };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateRateCardItemAction(id: string, input: TakeoffItemPresetInput): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffRateCard", "update");
+    const parsed = takeoffItemPresetSchema.parse(input);
+    await RateCardService.updateRateCardItem(id, parsed);
+    revalidatePath("/measure/rate-card");
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function moveRateCardItemAction(id: string, direction: "up" | "down"): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffRateCard", "update");
+    await RateCardService.moveRateCardItem(id, direction);
+    revalidatePath("/measure/rate-card");
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deleteRateCardItemAction(id: string): Promise<ActionResult> {
+  try {
+    const actor = await requirePermission("takeoffRateCard", "delete");
+    await RateCardService.softDeleteRateCardItem(id, actor.id);
+    revalidatePath("/measure/rate-card");
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function listRateCardItemsAction(): Promise<ActionResult<RateCardService.RateCardItem[]>> {
+  try {
+    await requirePermission("takeoffRateCard", "read");
+    const items = await RateCardService.listRateCardItems();
+    return { ok: true, data: items };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** "Add all from rate card" on a takeoff -- any role that can update takeoffs (not just the rate card). */
+export async function addAllFromRateCardAction(
+  takeoffId: string
+): Promise<ActionResult<RateCardService.AddedRateCardItem[]>> {
+  try {
+    await requirePermission("takeoffs", "update");
+    const takeoff = await TakeoffService.getTakeoff(takeoffId);
+    if (!takeoff) return { ok: false, message: "Takeoff not found." };
+    const added = await RateCardService.addAllRateCardItemsToTakeoff(takeoffId, takeoff.items);
+    revalidatePath(`/measure/${takeoffId}`);
+    return { ok: true, data: added };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+/** "Save to rate card" on a custom item on a takeoff -- requires rate-card write access, since it writes the shared card. */
+export async function saveItemAsPresetAction(name: string, colour: string, pricePerMetre: number): Promise<ActionResult<{ created: boolean }>> {
+  try {
+    await requirePermission("takeoffRateCard", "create");
+    const result = await RateCardService.upsertRateCardItemByName(name, colour, pricePerMetre);
+    revalidatePath("/measure/rate-card");
+    return { ok: true, data: { created: result.created } };
   } catch (err) {
     return fail(err);
   }

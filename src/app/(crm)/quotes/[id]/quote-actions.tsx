@@ -14,12 +14,14 @@ export function QuoteActions({
   status,
   pdfHref,
   existingJobId,
+  linkedTakeoffs = [],
 }: {
   quoteId: string;
   customerId: string;
   status: string;
   pdfHref: string;
   existingJobId?: string | null;
+  linkedTakeoffs?: { id: string; name: string }[];
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
@@ -53,6 +55,13 @@ export function QuoteActions({
             <Ruler className="h-3.5 w-3.5" /> Measure a plan
           </Link>
         </Button>
+        {linkedTakeoffs.map((t) => (
+          <Button key={t.id} type="button" size="sm" variant="outline" asChild>
+            <a href={`/api/takeoffs/${t.id}/export`}>
+              <Ruler className="h-3.5 w-3.5" /> Download marked-up plan ({t.name})
+            </a>
+          </Button>
+        ))}
         {existingJobId ? (
           <Button type="button" size="sm" variant="outline" onClick={() => router.push(`/jobs/${existingJobId}`)}>
             <Wrench className="h-3.5 w-3.5" /> View job

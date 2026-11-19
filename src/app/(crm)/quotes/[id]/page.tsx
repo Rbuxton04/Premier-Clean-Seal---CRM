@@ -5,6 +5,7 @@ import { BrandSwoosh } from "@/components/shell/brand-swoosh";
 import { Badge } from "@/components/ui/badge";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { getQuote, displayStatus } from "@/services/quote.service";
+import { listTakeoffs } from "@/services/takeoff.service";
 import { listCustomers } from "@/services/customer.service";
 import { listProductOptions } from "@/services/property.service";
 import { getOrgSettings } from "@/lib/settings";
@@ -22,6 +23,7 @@ export default async function QuoteDetailPage({ params }: { params: { id: string
   const quote = await getQuote(params.id);
   if (!quote) notFound();
   const user = await getCurrentUser();
+  const linkedTakeoffs = await listTakeoffs({ quoteId: quote.id });
 
   const ds = displayStatus(quote);
   const pdfHref = `/api/quotes/${quote.id}/pdf`;
@@ -52,7 +54,14 @@ export default async function QuoteDetailPage({ params }: { params: { id: string
       <Card>
         <CardHeader><CardTitle className="text-base">Actions</CardTitle></CardHeader>
         <CardContent>
-          <QuoteActions quoteId={quote.id} customerId={quote.customer.id} status={quote.status} pdfHref={pdfHref} existingJobId={quote.job?.id} />
+          <QuoteActions
+            quoteId={quote.id}
+            customerId={quote.customer.id}
+            status={quote.status}
+            pdfHref={pdfHref}
+            existingJobId={quote.job?.id}
+            linkedTakeoffs={linkedTakeoffs}
+          />
         </CardContent>
       </Card>
 

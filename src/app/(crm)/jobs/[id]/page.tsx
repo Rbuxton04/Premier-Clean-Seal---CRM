@@ -7,6 +7,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { formatGBP } from "@/lib/utils";
 import { getJob, listTechnicians } from "@/services/job.service";
+import { listTakeoffs } from "@/services/takeoff.service";
 import { jobStatusLabels, jobStatusBadgeVariant, paymentStatusLabels } from "@/validators/job";
 import { applicationAreaLabels } from "@/validators/completion";
 import { JobFieldsForm } from "./job-fields-form";
@@ -25,6 +26,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
   if (isTechnicianOnly && job.technicianId !== user!.id) notFound();
   const showFinancials = canViewFinancials(user?.roles ?? []);
   const technicians = await listTechnicians();
+  const linkedTakeoffs = await listTakeoffs({ jobId: job.id });
 
   return (
     <div className="space-y-6">
@@ -229,6 +231,11 @@ export default async function JobDetailPage({ params }: { params: { id: string }
               <Link href={`/measure/new?customerId=${job.customer.id}&jobId=${job.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
                 <Ruler className="h-4 w-4" /> Measure a plan
               </Link>
+              {linkedTakeoffs.map((t) => (
+                <a key={t.id} href={`/api/takeoffs/${t.id}/export`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                  <Ruler className="h-4 w-4" /> Download marked-up plan ({t.name})
+                </a>
+              ))}
             </CardContent>
           </Card>
         </div>

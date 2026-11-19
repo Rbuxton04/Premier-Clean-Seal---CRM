@@ -1,18 +1,20 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Undo2, Eraser, MousePointer2, Link2 } from "lucide-react";
+import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Undo2, Eraser, MousePointer2, Link2, ImageDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ensurePdfWorkerConfigured } from "../pdf-worker-setup";
 import type { TakeoffDetail, TakeoffItemDetail } from "@/services/takeoff.service";
 import type { ScalePresetItem } from "@/services/scale-preset.service";
+import type { RateCardItem } from "@/services/takeoff-rate-card.service";
 import { chainLengthPoints, resolvePointsPerMetre, computeMeasurementMetres, type Point } from "@/validators/takeoff";
 import {
   createMeasurementAction, updateMeasurementLabelAction, deleteMeasurementAction, clearAllMeasurementsAction,
   createTakeoffItemAction, updateTakeoffItemAction, deleteTakeoffItemAction,
   updateTakeoffScaleAction, updateTakeoffDetailsAction, createScalePresetAction,
+  addAllFromRateCardAction, saveItemAsPresetAction,
 } from "../actions";
 import { ItemsPanel } from "./items-panel";
 import { ScaleControls } from "./scale-controls";
@@ -24,9 +26,12 @@ const ZOOM_STEP = 0.25;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
-export function MeasureTool({ takeoff, presets, customers }: { takeoff: TakeoffDetail; presets: ScalePresetItem[]; customers: CustomerOption[] }) {
+export function MeasureTool({
+  takeoff, presets, customers, rateCardItems,
+}: { takeoff: TakeoffDetail; presets: ScalePresetItem[]; customers: CustomerOption[]; rateCardItems: RateCardItem[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
+  const svgRef = useRef<SVGSVGElement>(null);
   const pdfDocRef = useRef<import("pdfjs-dist").PDFDocumentProxy | null>(null);
 
   const [numPages, setNumPages] = useState(1);
@@ -257,6 +262,56 @@ export function MeasureTool({ takeoff, presets, customers }: { takeoff: TakeoffD
     setDrawPoints((pts) => pts.slice(0, -1));
   }
 
+  /**
+   * Client-side only -- flattens the rendered PDF canvas plus the SVG
+   * measurement overlay (serialised to an image) into one PNG at the
+   * current zoom, for a quick share/attach when the full marked-up PDF
+   * export is more than is needed. Both layers are same-origin (pdf.js
+   * renders the PDF itself via Canvas 2D drawing calls, not a cross-origin
+   * <img>; the SVG is serialised to a blob: URL), so the canvas isn't
+   * tainted and toBlob() works.
+   */
+  async function savePageAsImage() {
+    const canvas = canvasRef.current;
+    const svg = svgRef.current;
+    if (!canvas || !svg) return;
+
+    const svgString = new XMLSerializer().serializeToString(svg);
+    const svgUrl = URL.createObjectURL(new Blob([svgString], { type: "image/svg+xml;charset=utf-8" }));
+    try {
+      const overlayImage = await new Promise<HTMLImageElement>((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve(img);
+        img.onerror = () => reject(new Error("Could not render the measurement overlay."));
+        img.src = svgUrl;
+      });
+
+      const outCanvas = document.createElement("canvas");
+      outCanvas.width = canvas.width;
+      outCanvas.height = canvas.height;
+      const ctx = outCanvas.getContext("2d");
+      if (!ctx) return;
+      ctx.drawImage(canvas, 0, 0);
+      ctx.drawImage(overlayImage, 0, 0, canvas.width, canvas.height);
+
+      const blob: Blob | null = await new Promise((resolve) => outCanvas.toBlob(resolve, "image/png"));
+      if (!blob) {
+        setMessage("Could not save this page as an image.");
+        return;
+      }
+      const downloadUrl = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = downloadUrl;
+      a.download = `${takeoff.name} - page ${currentPage}.png`;
+      a.click();
+      URL.revokeObjectURL(downloadUrl);
+    } catch {
+      setMessage("Could not save this page as an image.");
+    } finally {
+      URL.revokeObjectURL(svgUrl);
+    }
+  }
+
   async function clearAll() {
     if (!window.confirm("Clear every measurement on this takeoff? Items and rates are kept.")) return;
     const result = await clearAllMeasurementsAction(takeoff.id);
@@ -282,6 +337,30 @@ export function MeasureTool({ takeoff, presets, customers }: { takeoff: TakeoffD
     if (result.ok) {
       setItems((cur) => cur.map((it) => (it.id === id ? { ...it, pricePerMetre, lineTotalGbp: +(it.totalMetres * pricePerMetre).toFixed(2) } : it)));
     }
+  }
+
+  async function handleAddAllFromRateCard() {
+    const result = await addAllFromRateCardAction(takeoff.id);
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    if (result.data.length === 0) {
+      setMessage("Every rate card item is already on this takeoff.");
+      return;
+    }
+    setItems((cur) => [
+      ...cur,
+      ...result.data.map((p): TakeoffItemDetail => ({
+        id: p.id, name: p.name, colour: p.colour, pricePerMetre: Number(p.pricePerMetre), sortOrder: p.sortOrder,
+        measurements: [], totalMetres: 0, lineTotalGbp: 0,
+      })),
+    ]);
+  }
+
+  /** Save-to-rate-card never changes anything on THIS takeoff -- it only writes the shared rate card. */
+  async function handleSaveItemToRateCard(item: TakeoffItemDetail) {
+    await saveItemAsPresetAction(item.name, item.colour, Number(item.pricePerMetre));
   }
 
   async function handleDeleteItem(id: string) {
@@ -374,6 +453,10 @@ export function MeasureTool({ takeoff, presets, customers }: { takeoff: TakeoffD
           <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
             <Eraser className="h-3.5 w-3.5" /> Clear all
           </Button>
+          <div className="mx-2 h-5 w-px bg-border" />
+          <Button type="button" size="sm" variant="outline" onClick={savePageAsImage} title="Save this page, as currently shown, as a PNG">
+            <ImageDown className="h-3.5 w-3.5" /> Save page as image
+          </Button>
         </div>
 
         <ScaleControls
@@ -413,6 +496,7 @@ export function MeasureTool({ takeoff, presets, customers }: { takeoff: TakeoffD
             <div ref={overlayRef} className="relative inline-block" style={{ width: viewportSize.width, height: viewportSize.height }}>
               <canvas ref={canvasRef} />
               <svg
+                ref={svgRef}
                 width={viewportSize.width}
                 height={viewportSize.height}
                 className="absolute inset-0 cursor-crosshair"
@@ -481,11 +565,14 @@ export function MeasureTool({ takeoff, presets, customers }: { takeoff: TakeoffD
       <div className="space-y-3">
         <ItemsPanel
           items={items}
+          rateCardItems={rateCardItems}
           selectedItemId={selectedItemId}
           onSelectItem={setSelectedItemId}
           onCreateItem={handleCreateItem}
           onUpdateItemRate={handleUpdateItemRate}
           onDeleteItem={handleDeleteItem}
+          onAddAllFromRateCard={handleAddAllFromRateCard}
+          onSaveItemToRateCard={handleSaveItemToRateCard}
           totalMetres={totalMetres}
           grandTotalGbp={grandTotalGbp}
         />
