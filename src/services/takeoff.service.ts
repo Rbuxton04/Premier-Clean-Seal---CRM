@@ -2,7 +2,7 @@ import type { TakeoffMeasurementType, TakeoffItemKind } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ORG_ID, getOrgSettings } from "@/lib/settings";
 import { getFileUrl } from "@/lib/storage/supabase";
-import { resolvePointsPerMetre, computeMeasurementMetres, type TakeoffScaleInput, type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type Point } from "@/validators/takeoff";
+import { resolvePointsPerMetre, computeMeasurementMetres, type TakeoffScaleInput, type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type TakeoffNoteCreateInput, type Point } from "@/validators/takeoff";
 
 // Explicit hand-written return types -- see the Prisma typing note in customer.service.ts.
 
@@ -71,6 +71,17 @@ export type TakeoffFileItem = {
   sortOrder: number;
 };
 
+/** A pin dropped on the plan (Drawings Part 2) -- x/y are in the same page-point space as a measurement's points. */
+export type TakeoffNoteItem = {
+  id: string;
+  pageNumber: number;
+  takeoffFileId: string | null;
+  x: number;
+  y: number;
+  text: string;
+  createdAt: Date;
+};
+
 export type TakeoffItemDetail = {
   id: string;
   name: string;
@@ -107,6 +118,8 @@ export type TakeoffDetail = {
   items: TakeoffItemDetail[];
   /** Every file on this drawing (Drawings Part 1 Step 4) -- the viewer streams each one's bytes on demand via /api/takeoffs/[id]/file?fileId=..., never a resolved URL here. */
   files: TakeoffFileItem[];
+  /** Pins on the plan (Drawings Part 2) -- independent of items/measurements. */
+  notes: TakeoffNoteItem[];
   totalMetres: number;
   grandTotalGbp: number;
   createdAt: Date;
@@ -155,6 +168,7 @@ export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
       customer: { select: { id: true, name: true } },
       items: { orderBy: { sortOrder: "asc" }, include: { measurements: { orderBy: { createdAt: "asc" } } } },
       files: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" } },
+      notes: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
     },
   });
   if (!row) return null;
@@ -173,6 +187,7 @@ export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
     scaleRatioLabel: row.scaleRatioLabel,
     items,
     files: row.files.map(summariseFile),
+    notes: row.notes.map((n) => ({ id: n.id, pageNumber: n.pageNumber, takeoffFileId: n.takeoffFileId, x: n.x, y: n.y, text: n.text, createdAt: n.createdAt })),
     totalMetres: +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2),
     grandTotalGbp: +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2),
     createdAt: row.createdAt,
@@ -413,6 +428,48 @@ export async function countMeasurementsOnFile(takeoffId: string, fileId: string)
 /** Soft delete -- reversible, same convention as Takeoff/Certification. Measurements that belonged to this file are left in place (not cascaded), consistent with how removing a file is a confirm-guarded but recoverable action, not a hard delete. */
 export async function softDeleteTakeoffFile(id: string): Promise<void> {
   await db.takeoffFile.update({ where: { id }, data: { deletedAt: new Date() } });
+}
+
+// ---------------------------------------------------------------------------
+// Notes (Drawings Part 2) -- pins on the plan, independent of items/measurements
+// ---------------------------------------------------------------------------
+
+export async function createTakeoffNote(takeoffId: string, data: TakeoffNoteCreateInput): Promise<TakeoffNoteItem> {
+  const takeoff = await db.takeoff.findUniqueOrThrow({ where: { id: takeoffId }, select: { organisationId: true } });
+  const note = await db.takeoffNote.create({
+    data: {
+      organisationId: takeoff.organisationId,
+      takeoffId,
+      takeoffFileId: data.takeoffFileId ?? null,
+      pageNumber: data.pageNumber,
+      x: data.x,
+      y: data.y,
+      text: data.text,
+      createdById: data.createdById ?? null,
+    },
+  });
+  return { id: note.id, pageNumber: note.pageNumber, takeoffFileId: note.takeoffFileId, x: note.x, y: note.y, text: note.text, createdAt: note.createdAt };
+}
+
+/** Covers both editing the text and moving the pin (drag in Select mode) -- whichever fields are given. */
+export async function updateTakeoffNote(id: string, data: { text?: string; x?: number; y?: number }): Promise<void> {
+  await db.takeoffNote.update({
+    where: { id },
+    data: {
+      ...(data.text !== undefined ? { text: data.text } : {}),
+      ...(data.x !== undefined ? { x: data.x } : {}),
+      ...(data.y !== undefined ? { y: data.y } : {}),
+    },
+  });
+}
+
+/** Soft delete -- reversible, same convention as Takeoff/TakeoffFile. */
+export async function softDeleteTakeoffNote(id: string): Promise<void> {
+  await db.takeoffNote.update({ where: { id }, data: { deletedAt: new Date() } });
+}
+
+export async function restoreTakeoffNote(id: string): Promise<void> {
+  await db.takeoffNote.update({ where: { id }, data: { deletedAt: null } });
 }
 
 // ---------------------------------------------------------------------------

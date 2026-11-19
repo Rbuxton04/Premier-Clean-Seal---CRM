@@ -16,6 +16,7 @@ import {
   updateTakeoffScaleAction, updateTakeoffDetailsAction, createScalePresetAction,
   addAllFromRateCardAction, saveItemAsPresetAction,
   createTakeoffFileAction, renameTakeoffFileAction, moveTakeoffFileAction, removeTakeoffFileAction, countMeasurementsOnFileAction,
+  createTakeoffNoteAction, updateTakeoffNoteAction, deleteTakeoffNoteAction,
 } from "../actions";
 import { ItemsPanel } from "./items-panel";
 import { ScaleControls } from "./scale-controls";
@@ -122,6 +123,13 @@ export function MeasureTool({
   const [selectedMeasurement, setSelectedMeasurement] = useState<{ itemId: string; measurementId: string } | null>(null);
   const [labelDraft, setLabelDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
+
+  // --- Notes (Drawings Part 2) -- pins on the plan, independent of items ---
+  const [notes, setNotes] = useState<TakeoffDetail["notes"]>(takeoff.notes);
+  const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
+  const [noteTextDraft, setNoteTextDraft] = useState("");
+  const noteDragRef = useRef<{ id: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
+  const noteDraggedRef = useRef(false);
 
   // --- Load the PDF document once -----------------------------------------
   // Streamed through a same-origin, auth-gated proxy (/api/takeoffs/[id]/file)
@@ -316,16 +324,24 @@ export function MeasureTool({
    * proven in src/lib/pdf/takeoff-markup-transform.ts for the server-side
    * export -- rather than deriving a rotation matrix by hand twice.
    */
-  function screenToPoint(clientX: number, clientY: number): Point {
-    const rect = overlayRef.current!.getBoundingClientRect();
-    const displayX = clientX - rect.left;
-    const displayY = clientY - rect.top;
+  /** The shared conversion behind screenToPoint/screenToPointFromOverlay -- takes a point already relative to the overlay's own top-left (not raw clientX/Y). */
+  function displayPointToStoredPoint(displayX: number, displayY: number): Point {
     const dv = displayViewportRef.current;
     const bv = baseViewportRef.current;
     if (!dv || !bv) return { x: displayX / renderScale, y: displayY / renderScale };
     const [pdfX, pdfY] = dv.convertToPdfPoint(displayX, displayY);
     const [x, y] = bv.convertToViewportPoint(pdfX, pdfY);
     return { x, y };
+  }
+
+  function screenToPoint(clientX: number, clientY: number): Point {
+    const rect = overlayRef.current!.getBoundingClientRect();
+    return displayPointToStoredPoint(clientX - rect.left, clientY - rect.top);
+  }
+
+  /** Same conversion, for callers (note-drag) that already have an overlay-relative display point rather than raw clientX/Y. */
+  function screenToPointFromOverlay(displayX: number, displayY: number): Point {
+    return displayPointToStoredPoint(displayX, displayY);
   }
 
   /** The inverse of screenToPoint -- a stored (unrotated) point to where it should be drawn on the current, possibly rotated, display. */
@@ -485,7 +501,11 @@ export function MeasureTool({
       createCountMarker(screenToPoint(e.clientX, e.clientY));
       return;
     }
-    if (activeTool === "note" || activeTool === "erase") return; // wired up in their own sections
+    if (activeTool === "note") {
+      createNoteAt(screenToPoint(e.clientX, e.clientY));
+      return;
+    }
+    if (activeTool === "erase") return; // erasing happens by clicking the measurement/marker/note itself -- see each element's own onClick
     if (!selectedItemId) {
       setMessage("Select or add an item before measuring.");
       return;
@@ -700,15 +720,14 @@ export function MeasureTool({
     setSelectedMeasurement(null);
   }
 
-  async function deleteSelectedMeasurement() {
-    if (!selectedMeasurement) return;
-    const result = await deleteMeasurementAction(takeoff.id, selectedMeasurement.measurementId);
+  async function removeMeasurement(itemId: string, measurementId: string) {
+    const result = await deleteMeasurementAction(takeoff.id, measurementId);
     if (result.ok) {
       setItems((cur) =>
         cur.map((it) => {
-          if (it.id !== selectedMeasurement.itemId) return it;
-          const removed = it.measurements.find((m) => m.id === selectedMeasurement.measurementId);
-          const measurements = it.measurements.filter((m) => m.id !== selectedMeasurement.measurementId);
+          if (it.id !== itemId) return it;
+          const removed = it.measurements.find((m) => m.id === measurementId);
+          const measurements = it.measurements.filter((m) => m.id !== measurementId);
           if (it.kind === "COUNT") {
             const count = it.count - (removed ? 1 : 0);
             return { ...it, measurements, count, lineTotalGbp: +(count * Number(it.pricePerMetre)).toFixed(2) };
@@ -718,7 +737,88 @@ export function MeasureTool({
         })
       );
     }
+  }
+
+  async function deleteSelectedMeasurement() {
+    if (!selectedMeasurement) return;
+    await removeMeasurement(selectedMeasurement.itemId, selectedMeasurement.measurementId);
     setSelectedMeasurement(null);
+  }
+
+  /** Click routing shared by every measurement/marker on the canvas: the Erase tool deletes on click (a basic version of Part 2 section 5's Erase tool -- the full measurements-list/undo-toast integration follows in that section), anything else selects. */
+  function handleMeasurementClick(itemId: string, measurementId: string, label: string | null) {
+    if (activeTool === "erase") {
+      removeMeasurement(itemId, measurementId);
+      return;
+    }
+    selectMeasurement(itemId, measurementId, label);
+  }
+
+  // --- Notes (Drawings Part 2) ---------------------------------------------
+  async function createNoteAt(p: Point) {
+    const result = await createTakeoffNoteAction(takeoff.id, { pageNumber: currentPage, takeoffFileId: activeFileId || undefined, x: p.x, y: p.y, text: "New note" });
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    const newNote = { id: result.data.id, pageNumber: currentPage, takeoffFileId: activeFileId || null, x: p.x, y: p.y, text: "New note", createdAt: result.data.createdAt };
+    setNotes((cur) => [...cur, newNote]);
+    setSelectedNoteId(newNote.id);
+    setNoteTextDraft("New note");
+  }
+
+  function selectNote(id: string, currentText: string) {
+    setSelectedMeasurement(null);
+    setSelectedNoteId(id);
+    setNoteTextDraft(currentText);
+  }
+
+  async function saveNoteText() {
+    if (!selectedNoteId) return;
+    const text = noteTextDraft.trim() || "Note";
+    await updateTakeoffNoteAction(takeoff.id, selectedNoteId, { text });
+    setNotes((cur) => cur.map((n) => (n.id === selectedNoteId ? { ...n, text } : n)));
+    setSelectedNoteId(null);
+  }
+
+  async function deleteSelectedNote() {
+    if (!selectedNoteId) return;
+    const result = await deleteTakeoffNoteAction(takeoff.id, selectedNoteId);
+    if (result.ok) setNotes((cur) => cur.filter((n) => n.id !== selectedNoteId));
+    setSelectedNoteId(null);
+  }
+
+  /** Drag-to-move a note pin in Select mode -- stops the overlay's own pan-drag from starting, via stopPropagation on the pointerdown that triggers this. */
+  function startNoteDrag(e: React.PointerEvent, note: { id: string; x: number; y: number }) {
+    if (activeTool !== "select") return;
+    e.stopPropagation();
+    (e.target as Element).setPointerCapture(e.pointerId);
+    noteDragRef.current = { id: note.id, startX: e.clientX, startY: e.clientY, originX: note.x, originY: note.y };
+    noteDraggedRef.current = false;
+  }
+
+  function onNoteDrag(e: React.PointerEvent) {
+    const drag = noteDragRef.current;
+    if (!drag) return;
+    e.stopPropagation();
+    const deltaScreenX = e.clientX - drag.startX;
+    const deltaScreenY = e.clientY - drag.startY;
+    if (Math.abs(deltaScreenX) > 2 || Math.abs(deltaScreenY) > 2) noteDraggedRef.current = true;
+    // Moves are tracked in screen-pixel delta then converted once, via the
+    // same screenToPoint used for everything else, so this stays correct
+    // at any zoom/pan/rotation -- rather than scaling the delta by hand.
+    const originScreen = pointToScreen({ x: drag.originX, y: drag.originY });
+    const newPoint = screenToPointFromOverlay(originScreen.x + deltaScreenX, originScreen.y + deltaScreenY);
+    setNotes((cur) => cur.map((n) => (n.id === drag.id ? { ...n, x: newPoint.x, y: newPoint.y } : n)));
+  }
+
+  async function endNoteDrag() {
+    const drag = noteDragRef.current;
+    noteDragRef.current = null;
+    if (!drag || !noteDraggedRef.current) return;
+    const note = notes.find((n) => n.id === drag.id);
+    if (!note) return;
+    await updateTakeoffNoteAction(takeoff.id, drag.id, { x: note.x, y: note.y });
   }
 
   async function handleRename(newName: string) {
@@ -936,6 +1036,7 @@ export function MeasureTool({
       .filter((m) => m.pageNumber === currentPage && (m.takeoffFileId ?? firstFileId) === activeFileId)
       .map((m) => ({ ...m, colour: it.colour, itemId: it.id }))
   );
+  const pageNotes = notes.filter((n) => n.pageNumber === currentPage && (n.takeoffFileId ?? firstFileId) === activeFileId);
   const drawingMetres = drawPoints.length > 0 ? chainLengthPoints(hoverPoint ? [...drawPoints, hoverPoint] : drawPoints) / pointsPerMetre : null;
 
   // Highlight boxes for the current search match, converted through the
@@ -1030,8 +1131,18 @@ export function MeasureTool({
           <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedMeasurement(null)}>Close</Button>
         </div>
       </div>
+    ) : selectedNoteId ? (
+      <div className="space-y-2 text-sm">
+        <span className="text-xs text-muted-foreground">Note</span>
+        <Input value={noteTextDraft} onChange={(e) => setNoteTextDraft(e.target.value)} className="h-8 w-full" placeholder="e.g. check access" autoFocus />
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={saveNoteText}>Save</Button>
+          <Button type="button" size="sm" variant="destructive" onClick={deleteSelectedNote}>Delete</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedNoteId(null)}>Close</Button>
+        </div>
+      </div>
     ) : (
-      <p className="text-xs text-muted-foreground">Click a measurement on the plan to select it.</p>
+      <p className="text-xs text-muted-foreground">Click a measurement, count marker or note on the plan to select it.</p>
     ),
     output: (
       <div className="space-y-2">
@@ -1144,7 +1255,7 @@ export function MeasureTool({
                       const p = screenPts[0];
                       const n = countMarkerNumbers.get(m.id) ?? "";
                       return (
-                        <g key={m.id} onClick={(e) => { e.stopPropagation(); selectMeasurement(m.itemId, m.id, m.label); }} className="cursor-pointer">
+                        <g key={m.id} onClick={(e) => { e.stopPropagation(); handleMeasurementClick(m.itemId, m.id, m.label); }} className="cursor-pointer">
                           <circle cx={p.x} cy={p.y} r={isSelected ? 11 : 9} fill={m.colour} stroke="#fff" strokeWidth={isSelected ? 3 : 2} />
                           <text x={p.x} y={p.y} fontSize={10} fontWeight={700} fill="#fff" textAnchor="middle" dominantBaseline="central">{n}</text>
                           {m.label && (
@@ -1156,7 +1267,7 @@ export function MeasureTool({
 
                     const midpoint = screenPts[Math.floor(screenPts.length / 2)];
                     return (
-                      <g key={m.id} onClick={(e) => { e.stopPropagation(); selectMeasurement(m.itemId, m.id, m.label); }}>
+                      <g key={m.id} onClick={(e) => { e.stopPropagation(); handleMeasurementClick(m.itemId, m.id, m.label); }}>
                         <polyline
                           points={screenPts.map((p) => `${p.x},${p.y}`).join(" ")}
                           fill="none"
@@ -1168,6 +1279,40 @@ export function MeasureTool({
                         <text x={midpoint.x} y={midpoint.y - 6} fontSize={11} fill={m.colour} fontWeight={600} style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}>
                           {Number(m.computedMetres)}m{m.label ? ` — ${m.label}` : ""}
                         </text>
+                      </g>
+                    );
+                  })}
+
+                  {pageNotes.map((note) => {
+                    const p = pointToScreen({ x: note.x, y: note.y });
+                    const isSelected = selectedNoteId === note.id;
+                    return (
+                      <g
+                        key={note.id}
+                        className={activeTool === "select" ? "cursor-move" : "cursor-pointer"}
+                        onPointerDown={(e) => startNoteDrag(e, note)}
+                        onPointerMove={onNoteDrag}
+                        onPointerUp={endNoteDrag}
+                        onClick={(e) => {
+                          e.stopPropagation();
+                          if (noteDraggedRef.current) {
+                            noteDraggedRef.current = false;
+                            return;
+                          }
+                          if (activeTool === "erase") {
+                            setSelectedNoteId(note.id);
+                            deleteSelectedNote();
+                            return;
+                          }
+                          selectNote(note.id, note.text);
+                        }}
+                      >
+                        <circle cx={p.x} cy={p.y} r={isSelected ? 10 : 8} fill="#3C2263" stroke="#fff" strokeWidth={2} />
+                        <text x={p.x} y={p.y} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle" dominantBaseline="central">!</text>
+                        <title>{note.text}</title>
+                        {isSelected && (
+                          <text x={p.x} y={p.y - 16} fontSize={11} fill="#3C2263" fontWeight={600} style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}>{note.text}</text>
+                        )}
                       </g>
                     );
                   })}

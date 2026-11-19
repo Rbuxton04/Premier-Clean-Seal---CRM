@@ -3,9 +3,9 @@
 import { revalidatePath } from "next/cache";
 import {
   takeoffCreateSchema, takeoffItemSchema, takeoffMeasurementSchema, takeoffScaleSchema, scalePresetSchema, takeoffItemPresetSchema,
-  takeoffFileCreateSchema, takeoffFileRenameSchema,
+  takeoffFileCreateSchema, takeoffFileRenameSchema, takeoffNoteCreateSchema, takeoffNoteUpdateSchema,
   type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type TakeoffScaleInput, type ScalePresetInput, type TakeoffItemPresetInput,
-  type TakeoffFileCreateInput, type TakeoffFileRenameInput,
+  type TakeoffFileCreateInput, type TakeoffFileRenameInput, type TakeoffNoteCreateInput, type TakeoffNoteUpdateInput,
 } from "@/validators/takeoff";
 import * as TakeoffService from "@/services/takeoff.service";
 import * as ScalePresetService from "@/services/scale-preset.service";
@@ -340,6 +340,56 @@ export async function removeTakeoffFileAction(takeoffId: string, fileId: string)
   try {
     await requirePermission("takeoffs", "update");
     await TakeoffService.softDeleteTakeoffFile(fileId);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Notes (Drawings Part 2)
+// ---------------------------------------------------------------------------
+
+export async function createTakeoffNoteAction(takeoffId: string, input: TakeoffNoteCreateInput): Promise<ActionResult<{ id: string; createdAt: Date }>> {
+  try {
+    const actor = await requirePermission("takeoffs", "update");
+    const parsed = takeoffNoteCreateSchema.parse({ ...input, createdById: actor.id });
+    const note = await TakeoffService.createTakeoffNote(takeoffId, parsed);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: { id: note.id, createdAt: note.createdAt } };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function updateTakeoffNoteAction(takeoffId: string, noteId: string, input: TakeoffNoteUpdateInput): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffs", "update");
+    const parsed = takeoffNoteUpdateSchema.parse(input);
+    await TakeoffService.updateTakeoffNote(noteId, parsed);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function deleteTakeoffNoteAction(takeoffId: string, noteId: string): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffs", "update");
+    await TakeoffService.softDeleteTakeoffNote(noteId);
+    revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+export async function restoreTakeoffNoteAction(takeoffId: string, noteId: string): Promise<ActionResult> {
+  try {
+    await requirePermission("takeoffs", "update");
+    await TakeoffService.restoreTakeoffNote(noteId);
     revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {

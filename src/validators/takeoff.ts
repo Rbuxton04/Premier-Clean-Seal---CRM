@@ -204,6 +204,27 @@ export type TakeoffFileCreateInput = z.infer<typeof takeoffFileCreateSchema>;
 export const takeoffFileRenameSchema = z.object({ name: z.string().min(1, "Name is required") });
 export type TakeoffFileRenameInput = z.infer<typeof takeoffFileRenameSchema>;
 
+// ---------------------------------------------------------------------------
+// Notes (Drawings Part 2) -- pins on the plan, independent of items/measurements
+// ---------------------------------------------------------------------------
+
+export const takeoffNoteCreateSchema = z.object({
+  pageNumber: z.coerce.number().int().positive(),
+  takeoffFileId: z.string().min(1).optional(),
+  x: z.number(),
+  y: z.number(),
+  text: z.string().min(1, "A note needs some text"),
+  createdById: z.string().optional(),
+});
+export type TakeoffNoteCreateInput = z.infer<typeof takeoffNoteCreateSchema>;
+
+export const takeoffNoteUpdateSchema = z.object({
+  text: z.string().min(1, "A note needs some text").optional(),
+  x: z.number().optional(),
+  y: z.number().optional(),
+});
+export type TakeoffNoteUpdateInput = z.infer<typeof takeoffNoteUpdateSchema>;
+
 export const takeoffItemPresetSchema = z.object({
   name: z.string().min(1, "Name is required"),
   colour: z.string().min(1),
