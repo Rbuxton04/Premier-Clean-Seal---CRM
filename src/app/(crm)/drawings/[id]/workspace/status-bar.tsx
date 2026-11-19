@@ -3,10 +3,12 @@
 import type { ActiveTool } from "./types";
 
 const TOOL_HINTS: Record<ActiveTool, string> = {
-  select: "Select an item, or pick a tool on the left to start measuring.",
-  length: "Click to start a length, click again to finish -- Esc to cancel.",
-  chain: "Click to add each point of a chain -- double-click, Enter, or Esc to finish.",
+  select: "Select, drag to pan, or pick a tool on the left to start measuring.",
+  length: "Click to start a length, click again to finish -- Ctrl+click to start a chain -- Esc to cancel.",
   calibrate: "Click two points over a feature of known length, then enter its real length.",
+  count: "Click to drop a count marker for the selected item.",
+  note: "Click to drop a note, then type it.",
+  erase: "Click a measurement, marker or note to delete it.",
 };
 
 export function StatusBar({

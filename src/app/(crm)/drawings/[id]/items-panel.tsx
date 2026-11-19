@@ -16,7 +16,7 @@ export type ItemsPanelProps = {
   rateCardItems: RateCardItem[];
   selectedItemId: string | null;
   onSelectItem: (id: string) => void;
-  onCreateItem: (name: string, colour: string, pricePerMetre: number) => Promise<void>;
+  onCreateItem: (name: string, colour: string, kind: "LENGTH" | "COUNT", pricePerMetre: number) => Promise<void>;
   onUpdateItemRate: (id: string, pricePerMetre: number) => Promise<void>;
   onDeleteItem: (id: string) => Promise<void>;
   onAddAllFromRateCard: () => Promise<void>;
@@ -32,6 +32,7 @@ export function ItemsPanel({
   const [adding, setAdding] = useState(false);
   const [source, setSource] = useState<"rateCard" | "custom">(rateCardItems.length > 0 ? "rateCard" : "custom");
   const [pickedPresetId, setPickedPresetId] = useState(rateCardItems[0]?.id ?? "");
+  const [newKind, setNewKind] = useState<"LENGTH" | "COUNT">("LENGTH");
   const [newName, setNewName] = useState("");
   const [newColour, setNewColour] = useState<string>(takeoffItemColourPalette[items.length % takeoffItemColourPalette.length]);
   const [newRate, setNewRate] = useState(String(DEFAULT_ITEM_RATE_PER_METRE_GBP));
@@ -49,7 +50,8 @@ export function ItemsPanel({
     const preset = rateCardItems.find((p) => p.id === pickedPresetId);
     if (!preset) return;
     setPending(true);
-    await onCreateItem(preset.name, preset.colour, Number(preset.pricePerMetre));
+    // The rate card is LENGTH-only -- it predates Drawings Part 2's count items.
+    await onCreateItem(preset.name, preset.colour, "LENGTH", Number(preset.pricePerMetre));
     setPending(false);
     resetAddForm();
   }
@@ -57,7 +59,7 @@ export function ItemsPanel({
   async function submitCustomItem() {
     if (!newName.trim()) return;
     setPending(true);
-    await onCreateItem(newName.trim(), newColour, Number(newRate) || 0);
+    await onCreateItem(newName.trim(), newColour, newKind, Number(newRate) || 0);
     setPending(false);
     resetAddForm();
   }
@@ -124,7 +126,15 @@ export function ItemsPanel({
             </>
           ) : (
             <>
-              <Input autoFocus placeholder="Item name (e.g. Floors)" value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-sm" />
+              <div className="flex gap-1 rounded-md bg-muted p-0.5 text-xs">
+                <button type="button" onClick={() => setNewKind("LENGTH")} className={cn("flex-1 rounded px-2 py-1", newKind === "LENGTH" ? "bg-card font-medium shadow-sm" : "text-muted-foreground")}>
+                  Length (£/m)
+                </button>
+                <button type="button" onClick={() => setNewKind("COUNT")} className={cn("flex-1 rounded px-2 py-1", newKind === "COUNT" ? "bg-card font-medium shadow-sm" : "text-muted-foreground")}>
+                  Count (£/item)
+                </button>
+              </div>
+              <Input autoFocus placeholder={newKind === "COUNT" ? "Item name (e.g. Hotel bathroom)" : "Item name (e.g. Floors)"} value={newName} onChange={(e) => setNewName(e.target.value)} className="h-8 text-sm" />
               <div className="flex items-center gap-2">
                 <input type="color" value={newColour} onChange={(e) => setNewColour(e.target.value)} className="h-8 w-10 rounded border" aria-label="Colour" />
                 <div className="flex flex-wrap gap-1">
@@ -136,7 +146,7 @@ export function ItemsPanel({
               <div className="flex items-center gap-2">
                 <span className="text-xs text-muted-foreground">£</span>
                 <Input type="number" step="0.01" min="0" value={newRate} onChange={(e) => setNewRate(e.target.value)} className="h-8 w-24 text-sm" />
-                <span className="text-xs text-muted-foreground">/ m</span>
+                <span className="text-xs text-muted-foreground">{newKind === "COUNT" ? "/ item" : "/ m"}</span>
               </div>
               <div className="flex gap-2">
                 <Button type="button" size="sm" disabled={pending || !newName.trim()} onClick={submitCustomItem}>
@@ -168,10 +178,10 @@ export function ItemsPanel({
                 {selectedItemId === item.id && <Check className="h-3.5 w-3.5 shrink-0 text-brand-plum" />}
               </button>
               <div className="ml-5 mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-                <span>{item.totalMetres} m</span>
+                <span>{item.kind === "COUNT" ? item.count : item.totalMetres}{item.kind === "COUNT" ? "" : " m"}</span>
                 <span>×</span>
                 <RateInput value={Number(item.pricePerMetre)} onCommit={(v) => onUpdateItemRate(item.id, v)} />
-                <span>/m =</span>
+                <span>{item.kind === "COUNT" ? "/item =" : "/m ="}</span>
                 <span className="font-medium text-foreground">{formatGBP(item.lineTotalGbp)}</span>
                 <button type="button" onClick={() => handleSaveToRateCard(item)} className="ml-auto text-muted-foreground hover:text-brand-plum" aria-label={`Save ${item.name} to rate card`} title="Save to rate card">
                   <BookmarkPlus className="h-3.5 w-3.5" />

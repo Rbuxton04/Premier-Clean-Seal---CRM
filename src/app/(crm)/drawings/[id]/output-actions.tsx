@@ -7,27 +7,37 @@ import { Button } from "@/components/ui/button";
 import { formatGBP } from "@/lib/utils";
 import type { TakeoffItemDetail } from "@/services/takeoff.service";
 
+/** A LENGTH item's quantity is its metres; a COUNT item's is its marker count -- see TakeoffItemDetail.count. */
+function quantityOf(item: TakeoffItemDetail): number {
+  return item.kind === "COUNT" ? item.count : item.totalMetres;
+}
+function hasQuantity(item: TakeoffItemDetail): boolean {
+  return quantityOf(item) > 0;
+}
+function quantityLabel(item: TakeoffItemDetail): string {
+  return item.kind === "COUNT" ? `${item.count}` : `${item.totalMetres} m`;
+}
+function rateLabel(item: TakeoffItemDetail): string {
+  return item.kind === "COUNT" ? `${formatGBP(Number(item.pricePerMetre))}/item` : `${formatGBP(Number(item.pricePerMetre))}/m`;
+}
+
 function buildListText(items: TakeoffItemDetail[], grandTotalGbp: number): string {
-  const lines = items
-    .filter((i) => i.totalMetres > 0)
-    .map((i) => `${i.name} — ${i.totalMetres} m × ${formatGBP(Number(i.pricePerMetre))}/m = ${formatGBP(i.lineTotalGbp)}`);
+  const lines = items.filter(hasQuantity).map((i) => `${i.name} — ${quantityLabel(i)} × ${rateLabel(i)} = ${formatGBP(i.lineTotalGbp)}`);
   lines.push(`Total: ${formatGBP(grandTotalGbp)}`);
   return lines.join("\n");
 }
 
 function buildTableHtml(items: TakeoffItemDetail[], grandTotalGbp: number): string {
   const rows = items
-    .filter((i) => i.totalMetres > 0)
-    .map((i) => `<tr><td>${i.name}</td><td align="right">${i.totalMetres} m</td><td align="right">${formatGBP(Number(i.pricePerMetre))}</td><td align="right">${formatGBP(i.lineTotalGbp)}</td></tr>`)
+    .filter(hasQuantity)
+    .map((i) => `<tr><td>${i.name}</td><td align="right">${quantityLabel(i)}</td><td align="right">${rateLabel(i)}</td><td align="right">${formatGBP(i.lineTotalGbp)}</td></tr>`)
     .join("");
-  return `<table border="1" cellpadding="4" cellspacing="0"><thead><tr><th>Item</th><th>Metres</th><th>£/m</th><th>Line total</th></tr></thead><tbody>${rows}<tr><td colspan="3"><b>Total</b></td><td align="right"><b>${formatGBP(grandTotalGbp)}</b></td></tr></tbody></table>`;
+  return `<table border="1" cellpadding="4" cellspacing="0"><thead><tr><th>Item</th><th>Qty</th><th>Rate</th><th>Line total</th></tr></thead><tbody>${rows}<tr><td colspan="3"><b>Total</b></td><td align="right"><b>${formatGBP(grandTotalGbp)}</b></td></tr></tbody></table>`;
 }
 
 function buildTableText(items: TakeoffItemDetail[], grandTotalGbp: number): string {
-  const rows = items
-    .filter((i) => i.totalMetres > 0)
-    .map((i) => `${i.name}\t${i.totalMetres} m\t${formatGBP(Number(i.pricePerMetre))}\t${formatGBP(i.lineTotalGbp)}`);
-  return [`Item\tMetres\t£/m\tLine total`, ...rows, `Total\t\t\t${formatGBP(grandTotalGbp)}`].join("\n");
+  const rows = items.filter(hasQuantity).map((i) => `${i.name}\t${quantityLabel(i)}\t${rateLabel(i)}\t${formatGBP(i.lineTotalGbp)}`);
+  return [`Item\tQty\tRate\tLine total`, ...rows, `Total\t\t\t${formatGBP(grandTotalGbp)}`].join("\n");
 }
 
 export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: string; items: TakeoffItemDetail[]; grandTotalGbp: number }) {
@@ -60,17 +70,17 @@ export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: 
     setTimeout(() => setCopied(null), 2000);
   }
 
-  const hasMetres = items.some((i) => i.totalMetres > 0);
+  const hasQuantities = items.some(hasQuantity);
 
   return (
     <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2.5">
-      <Button type="button" size="sm" variant="outline" disabled={!hasMetres} onClick={copyList}>
+      <Button type="button" size="sm" variant="outline" disabled={!hasQuantities} onClick={copyList}>
         {copied === "list" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} Copy as list
       </Button>
-      <Button type="button" size="sm" variant="outline" disabled={!hasMetres} onClick={copyTable}>
+      <Button type="button" size="sm" variant="outline" disabled={!hasQuantities} onClick={copyTable}>
         {copied === "table" ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />} Copy as table
       </Button>
-      <Button type="button" size="sm" disabled={!hasMetres} asChild>
+      <Button type="button" size="sm" disabled={!hasQuantities} asChild>
         <Link href={`/quotes/new?takeoffId=${takeoffId}`}>
           <FileText className="h-3.5 w-3.5" /> Create quote from takeoff
         </Link>
@@ -84,7 +94,7 @@ export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: 
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <input type="checkbox" checked={exportPages === "all"} onChange={(e) => setExportPages(e.target.checked ? "all" : "measured")} /> All pages
       </label>
-      <Button type="button" size="sm" variant="outline" disabled={!hasMetres} asChild>
+      <Button type="button" size="sm" variant="outline" disabled={!hasQuantities} asChild>
         <a href={`/api/takeoffs/${takeoffId}/export?prices=${exportPrices ? "1" : "0"}&pages=${exportPages}`}>
           <Download className="h-3.5 w-3.5" /> Download marked-up plan
         </a>

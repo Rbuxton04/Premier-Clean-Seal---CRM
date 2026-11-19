@@ -55,6 +55,8 @@ model Organisation {
   scalePresets    ScalePreset[]
   takeoffItemPresets TakeoffItemPreset[]
   takeoffFiles       TakeoffFile[]
+  takeoffNotes       TakeoffNote[]
+  takeoffMaterialDefaults TakeoffMaterialDefaults?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
 }
@@ -1122,6 +1124,7 @@ model Takeoff {
 
   items TakeoffItem[]
   files TakeoffFile[]
+  notes TakeoffNote[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1135,6 +1138,13 @@ model Takeoff {
   @@index([customerId])
 }
 
+// LENGTH (the original/default) is priced per metre; COUNT (Drawings Part
+// 2) is priced per item, e.g. "Hotel bathroom GBP250", "WC", "Window".
+enum TakeoffItemKind {
+  LENGTH
+  COUNT
+}
+
 model TakeoffItem {
   id        String  @id @default(cuid())
   takeoffId String
@@ -1144,12 +1154,24 @@ model TakeoffItem {
   // Hex colour (e.g. "#3C2263") -- drawn on the plan in this colour and
   // shown as a swatch in the side panel.
   colour String
-  // Per-metre rate for THIS takeoff -- defaulted from the rate card when
-  // created, but a snapshot from then on so a saved takeoff stays
-  // reproducible even if the rate card changes later (same reasoning as
-  // RoomVisit.priceGbp).
+  kind   TakeoffItemKind @default(LENGTH)
+  // The rate for THIS item -- defaulted from the rate card when created,
+  // but a snapshot from then on so a saved takeoff stays reproducible even
+  // if the rate card changes later (same reasoning as RoomVisit.priceGbp).
+  // Reused as-is for a COUNT item's price-per-item (Drawings Part 2) --
+  // deliberately not renamed or split into a second column: the DB column
+  // name stays historical, but every TS type/UI label calls it "rate" (or
+  // "GBP/m" vs "GBP/item" depending on kind), never "pricePerMetre", to
+  // avoid baking the LENGTH-only name into Part 2's COUNT-item code.
   pricePerMetre Decimal @db.Decimal(10, 2)
   sortOrder     Int     @default(0)
+
+  // Worst-case materials (Drawings Part 2) -- LENGTH items only. Null
+  // means "use the organisation's TakeoffMaterialDefaults"; set any of the
+  // three to override just that one figure for this item.
+  overrideJointWidthMm Int?
+  overrideJointDepthMm Int?
+  overrideWastePercent Float?
 
   measurements TakeoffMeasurement[]
 
@@ -1161,6 +1183,13 @@ model TakeoffItem {
 enum TakeoffMeasurementType {
   LENGTH
   CHAIN
+  // Drawings Part 2 -- one point per COUNT measurement (a dropped marker
+  // on a COUNT item). Added in its own migration, per
+  // docs/DATABASE_CHANGES.md's instruction not to use a value added to an
+  // existing Postgres enum within the same migration that adds it --
+  // every actual use of COUNT happens later, via the running
+  // application's own Prisma queries, never inside a migration file.
+  COUNT
 }
 
 model TakeoffMeasurement {
@@ -1220,11 +1249,60 @@ model TakeoffFile {
   sortOrder      Int     @default(0)
 
   measurements TakeoffMeasurement[]
+  notes        TakeoffNote[]
 
   createdAt DateTime  @default(now())
   deletedAt DateTime?
 
   @@index([takeoffId, deletedAt])
+}
+
+// A pin dropped on the plan (Drawings Part 2) -- a short note at a point,
+// not tied to any item/measurement. x/y are in the same PDF page-point
+// space (unrotated, zoom-independent) as TakeoffMeasurement.points.
+model TakeoffNote {
+  id             String @id @default(cuid())
+  organisationId String
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+  takeoffId      String
+  takeoff        Takeoff      @relation(fields: [takeoffId], references: [id], onDelete: Cascade)
+  takeoffFileId  String?
+  takeoffFile    TakeoffFile? @relation(fields: [takeoffFileId], references: [id])
+
+  pageNumber Int
+  x          Float
+  y          Float
+  text       String
+  // Plain string, no relation -- same convention as Takeoff.deletedById:
+  // informal attribution, not a enforced FK.
+  createdById String?
+
+  createdAt DateTime  @default(now())
+  updatedAt DateTime  @updatedAt
+  deletedAt DateTime?
+
+  @@index([takeoffId, deletedAt])
+  @@index([takeoffFileId])
+}
+
+// Organisation-wide worst-case materials settings (Drawings Part 2) -- a
+// one-row-per-org settings record, same singleton convention as a unique
+// organisationId. Used only for the materials list (tubes to buy); never
+// affects the customer's quote, which stays on measured metres.
+model TakeoffMaterialDefaults {
+  id             String @id @default(cuid())
+  organisationId String @unique
+  organisation   Organisation @relation(fields: [organisationId], references: [id])
+
+  jointWidthMm Int   @default(15)
+  jointDepthMm Int   @default(10)
+  // Allowed: 310 (default), 400, 600 -- enforced in the Zod validator, not
+  // a DB constraint (same approach as other small bounded-choice fields in
+  // this schema).
+  tubeMl       Int   @default(310)
+  wastePercent Float @default(10)
+
+  updatedAt DateTime @updatedAt
 }
 
 // The reusable rate card (Measuring tool Phase 2, Part B) -- set up once,

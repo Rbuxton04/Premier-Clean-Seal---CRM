@@ -51,14 +51,19 @@ backup you can trust.
    `certifications`, `scalePresets`, `takeoffs`, `takeoffItems`,
    `takeoffMeasurements`, `takeoffFiles` (a drawing's PDFs -- Drawings
    Part 1 Step 4; `takeoffMeasurement.takeoffFileId` references one of
-   these), `takeoffItemPresets` (the rate card -- independent
-   of any takeoff; see the schema comment on `TakeoffItemPreset`), ...), each an array of the rows Prisma would
+   these), `takeoffNotes` (plan pins -- Drawings Part 2), `takeoffItemPresets` (the rate card -- independent
+   of any takeoff; see the schema comment on `TakeoffItemPreset`), `takeoffMaterialDefaults` (one row per
+   organisation, the worst-case-materials settings used only for the
+   materials list, never the quote -- Drawings Part 2), ...), each an array of the rows Prisma would
    return from `findMany()` — plus one special key, `customerTags` (see
    below). Restore `takeoffs` before `takeoffFiles` before `takeoffItems`
    before `takeoffMeasurements` (each references one of the earlier ones
    by id), same as `hotelGroups` before `hotelProperties` before `rooms`
-   before `roomVisits` before `roomVisitPhotos`. `takeoffItemPresets` (the
-   rate card) has no foreign key to any of those -- restore it any time
+   before `roomVisits` before `roomVisitPhotos`. `takeoffNotes` references
+   `takeoffs` and optionally `takeoffFiles` -- restore it after both.
+   `takeoffItemPresets` (the
+   rate card) and `takeoffMaterialDefaults` have no foreign key to any of
+   those -- restore either any time
    after `organisations`.
 4. To actually restore into a scratch database: spin up a throwaway Postgres
    (e.g. a local Docker container or a new free Render Postgres) — confirm

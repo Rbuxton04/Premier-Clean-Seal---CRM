@@ -262,12 +262,17 @@ export function MeasureTool({
       } else if (e.key === "Enter" && drawIsChain && drawPoints.length >= 2) {
         finalizeMeasurement(drawPoints, "CHAIN");
       } else if (!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        // V/L/C/N/K/E pick a tool; F/1/2 fit; R rotate -- see tool-
+        // palette.tsx for why V (not S) is select/pan: S is reserved for
+        // the Part 2 snap toggle.
         const key = e.key.toLowerCase();
-        if (key === "s") setActiveTool("select");
+        if (key === "v") setActiveTool("select");
         else if (key === "l") setActiveTool("length");
-        else if (key === "c") setActiveTool("chain");
+        else if (key === "c") setActiveTool("count");
+        else if (key === "n") setActiveTool("note");
         else if (key === "k") setActiveTool("calibrate");
-        else if (key === "1") fitPage();
+        else if (key === "e") setActiveTool("erase");
+        else if (key === "f" || key === "1") fitPage();
         else if (key === "2") fitWidth();
         else if (key === "r") rotateView();
       }
@@ -344,6 +349,9 @@ export function MeasureTool({
   function recomputeItemsForScale(newPointsPerMetre: number) {
     setItems((cur) =>
       cur.map((it) => {
+        // A COUNT item's quantity is a marker count, not a distance -- the
+        // scale doesn't change it at all.
+        if (it.kind === "COUNT") return it;
         const measurements = it.measurements.map((m) => ({ ...m, computedMetres: computeMeasurementMetres(m.points, newPointsPerMetre) }));
         const totalMetres = +measurements.reduce((sum, m) => sum + Number(m.computedMetres), 0).toFixed(2);
         return { ...it, measurements, totalMetres, lineTotalGbp: +(totalMetres * Number(it.pricePerMetre)).toFixed(2) };
@@ -433,6 +441,35 @@ export function MeasureTool({
     );
   }
 
+  /** A COUNT marker is one point, one measurement, quantity 1 -- see the TakeoffItemDetail.count comment in takeoff.service.ts. */
+  async function createCountMarker(p: Point) {
+    if (!selectedItemId) {
+      setMessage("Select a count item first.");
+      return;
+    }
+    const result = await createMeasurementAction(
+      takeoff.id,
+      { takeoffItemId: selectedItemId, pageNumber: currentPage, takeoffFileId: activeFileId || undefined, type: "COUNT", points: [p] },
+      pointsPerMetre
+    );
+    if (!result.ok) {
+      setMessage(result.message);
+      return;
+    }
+    setItems((cur) =>
+      cur.map((it) =>
+        it.id === selectedItemId
+          ? {
+              ...it,
+              measurements: [...it.measurements, { id: result.data.id, pageNumber: currentPage, takeoffFileId: activeFileId || null, type: "COUNT", points: [p], computedMetres: 0, label: null }],
+              count: it.count + 1,
+              lineTotalGbp: +((it.count + 1) * Number(it.pricePerMetre)).toFixed(2),
+            }
+          : it
+      )
+    );
+  }
+
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.detail > 1) return; // double-click is handled separately, below
     if (panMovedRef.current) {
@@ -444,12 +481,19 @@ export function MeasureTool({
       return;
     }
     if (activeTool === "select") return; // Select/Pan: a plain click does nothing, panning is a drag (below)
+    if (activeTool === "count") {
+      createCountMarker(screenToPoint(e.clientX, e.clientY));
+      return;
+    }
+    if (activeTool === "note" || activeTool === "erase") return; // wired up in their own sections
     if (!selectedItemId) {
       setMessage("Select or add an item before measuring.");
       return;
     }
     const p = screenToPoint(e.clientX, e.clientY);
-    const wantsChain = activeTool === "chain";
+    // Chain is Ctrl+click on the Length tool, not its own palette tool --
+    // see the comment on ActiveTool for why.
+    const wantsChain = e.ctrlKey || e.metaKey;
 
     if (drawPoints.length === 0) {
       setDrawPoints([p]);
@@ -568,14 +612,18 @@ export function MeasureTool({
   async function clearAll() {
     if (!window.confirm("Clear every measurement on this takeoff? Items and rates are kept.")) return;
     const result = await clearAllMeasurementsAction(takeoff.id);
-    if (result.ok) setItems((cur) => cur.map((it) => ({ ...it, measurements: [], totalMetres: 0, lineTotalGbp: 0 })));
+    if (result.ok) setItems((cur) => cur.map((it) => ({ ...it, measurements: [], totalMetres: 0, count: 0, lineTotalGbp: 0 })));
   }
 
   // --- Items -----------------------------------------------------------
-  async function handleCreateItem(name: string, colour: string, pricePerMetre: number) {
-    const result = await createTakeoffItemAction(takeoff.id, { name, colour, pricePerMetre, sortOrder: items.length });
+  async function handleCreateItem(name: string, colour: string, kind: "LENGTH" | "COUNT", pricePerMetre: number) {
+    const result = await createTakeoffItemAction(takeoff.id, { name, colour, kind, pricePerMetre, sortOrder: items.length });
     if (result.ok) {
-      const newItem: TakeoffItemDetail = { id: result.data.id, name, colour, pricePerMetre, sortOrder: items.length, measurements: [], totalMetres: 0, lineTotalGbp: 0 };
+      const newItem: TakeoffItemDetail = {
+        id: result.data.id, name, colour, kind, pricePerMetre, sortOrder: items.length,
+        overrideJointWidthMm: null, overrideJointDepthMm: null, overrideWastePercent: null,
+        measurements: [], totalMetres: 0, count: 0, lineTotalGbp: 0,
+      };
       setItems((cur) => [...cur, newItem]);
       setSelectedItemId(newItem.id);
     } else {
@@ -586,9 +634,16 @@ export function MeasureTool({
   async function handleUpdateItemRate(id: string, pricePerMetre: number) {
     const item = items.find((i) => i.id === id);
     if (!item) return;
-    const result = await updateTakeoffItemAction(takeoff.id, id, { name: item.name, colour: item.colour, pricePerMetre, sortOrder: item.sortOrder });
+    const result = await updateTakeoffItemAction(takeoff.id, id, {
+      name: item.name, colour: item.colour, kind: item.kind, pricePerMetre, sortOrder: item.sortOrder,
+      overrideJointWidthMm: item.overrideJointWidthMm, overrideJointDepthMm: item.overrideJointDepthMm, overrideWastePercent: item.overrideWastePercent,
+    });
     if (result.ok) {
-      setItems((cur) => cur.map((it) => (it.id === id ? { ...it, pricePerMetre, lineTotalGbp: +(it.totalMetres * pricePerMetre).toFixed(2) } : it)));
+      setItems((cur) =>
+        cur.map((it) =>
+          it.id === id ? { ...it, pricePerMetre, lineTotalGbp: +((it.kind === "COUNT" ? it.count : it.totalMetres) * pricePerMetre).toFixed(2) } : it
+        )
+      );
     }
   }
 
@@ -605,8 +660,9 @@ export function MeasureTool({
     setItems((cur) => [
       ...cur,
       ...result.data.map((p): TakeoffItemDetail => ({
-        id: p.id, name: p.name, colour: p.colour, pricePerMetre: Number(p.pricePerMetre), sortOrder: p.sortOrder,
-        measurements: [], totalMetres: 0, lineTotalGbp: 0,
+        id: p.id, name: p.name, colour: p.colour, kind: "LENGTH", pricePerMetre: Number(p.pricePerMetre), sortOrder: p.sortOrder,
+        overrideJointWidthMm: null, overrideJointDepthMm: null, overrideWastePercent: null,
+        measurements: [], totalMetres: 0, count: 0, lineTotalGbp: 0,
       })),
     ]);
   }
@@ -652,13 +708,13 @@ export function MeasureTool({
         cur.map((it) => {
           if (it.id !== selectedMeasurement.itemId) return it;
           const removed = it.measurements.find((m) => m.id === selectedMeasurement.measurementId);
-          const newTotal = +(it.totalMetres - Number(removed?.computedMetres ?? 0)).toFixed(2);
-          return {
-            ...it,
-            measurements: it.measurements.filter((m) => m.id !== selectedMeasurement.measurementId),
-            totalMetres: newTotal,
-            lineTotalGbp: +(newTotal * Number(it.pricePerMetre)).toFixed(2),
-          };
+          const measurements = it.measurements.filter((m) => m.id !== selectedMeasurement.measurementId);
+          if (it.kind === "COUNT") {
+            const count = it.count - (removed ? 1 : 0);
+            return { ...it, measurements, count, lineTotalGbp: +(count * Number(it.pricePerMetre)).toFixed(2) };
+          }
+          const totalMetres = +(it.totalMetres - Number(removed?.computedMetres ?? 0)).toFixed(2);
+          return { ...it, measurements, totalMetres, lineTotalGbp: +(totalMetres * Number(it.pricePerMetre)).toFixed(2) };
         })
       );
     }
@@ -868,6 +924,13 @@ export function MeasureTool({
   // of file B) -- without this filter, switching tabs would show the
   // other file's measurements overlaid on the wrong plan.
   const firstFileId = files[0]?.id;
+  // Each COUNT marker's sequence number for its own item, across the whole
+  // drawing (not just this page) -- "a numbered dot", per the brief.
+  const countMarkerNumbers = new Map<string, number>();
+  for (const it of items) {
+    let n = 0;
+    for (const m of it.measurements) if (m.type === "COUNT") countMarkerNumbers.set(m.id, ++n);
+  }
   const pageMeasurements = items.flatMap((it) =>
     it.measurements
       .filter((m) => m.pageNumber === currentPage && (m.takeoffFileId ?? firstFileId) === activeFileId)
@@ -1076,6 +1139,21 @@ export function MeasureTool({
                   {pageMeasurements.map((m) => {
                     const screenPts = m.points.map(pointToScreen);
                     const isSelected = selectedMeasurement?.measurementId === m.id;
+
+                    if (m.type === "COUNT") {
+                      const p = screenPts[0];
+                      const n = countMarkerNumbers.get(m.id) ?? "";
+                      return (
+                        <g key={m.id} onClick={(e) => { e.stopPropagation(); selectMeasurement(m.itemId, m.id, m.label); }} className="cursor-pointer">
+                          <circle cx={p.x} cy={p.y} r={isSelected ? 11 : 9} fill={m.colour} stroke="#fff" strokeWidth={isSelected ? 3 : 2} />
+                          <text x={p.x} y={p.y} fontSize={10} fontWeight={700} fill="#fff" textAnchor="middle" dominantBaseline="central">{n}</text>
+                          {m.label && (
+                            <text x={p.x} y={p.y - 15} fontSize={11} fill={m.colour} fontWeight={600} style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}>{m.label}</text>
+                          )}
+                        </g>
+                      );
+                    }
+
                     const midpoint = screenPts[Math.floor(screenPts.length / 2)];
                     return (
                       <g key={m.id} onClick={(e) => { e.stopPropagation(); selectMeasurement(m.itemId, m.id, m.label); }}>

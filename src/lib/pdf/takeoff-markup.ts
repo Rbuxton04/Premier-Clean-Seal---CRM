@@ -195,7 +195,9 @@ async function appendSummaryPage(libDoc: PDFDocument, takeoff: TakeoffExportDeta
     }
     page.drawCircle({ x: colItem + 3, y: y + 3, size: 3, color: hexToRgb(item.colour) });
     page.drawText(item.name, { x: colItem + 12, y, size: 9, font, color: INK });
-    page.drawText(`${item.totalMetres}`, { x: colMetres, y, size: 9, font, color: INK });
+    // A COUNT item's quantity is a marker count, not a distance (always 0)
+    // -- see TakeoffItemDetail.count (Drawings Part 2).
+    page.drawText(item.kind === "COUNT" ? `${item.count} x` : `${item.totalMetres}`, { x: colMetres, y, size: 9, font, color: INK });
     if (showPrices) {
       page.drawText(gbp(Number(item.pricePerMetre)), { x: colRate, y, size: 9, font, color: INK });
       page.drawText(gbp(item.lineTotalGbp), { x: colLineTotal, y, size: 9, font, color: INK });

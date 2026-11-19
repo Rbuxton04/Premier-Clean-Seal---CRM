@@ -1,4 +1,4 @@
-import type { TakeoffMeasurementType } from "@prisma/client";
+import type { TakeoffMeasurementType, TakeoffItemKind } from "@prisma/client";
 import { db } from "@/lib/db";
 import { ORG_ID, getOrgSettings } from "@/lib/settings";
 import { getFileUrl } from "@/lib/storage/supabase";
@@ -75,10 +75,21 @@ export type TakeoffItemDetail = {
   id: string;
   name: string;
   colour: string;
+  // LENGTH (default) is priced per metre; COUNT (Drawings Part 2) per
+  // item -- see the schema comment on TakeoffItem.pricePerMetre.
+  kind: TakeoffItemKind;
   pricePerMetre: unknown;
   sortOrder: number;
+  // Worst-case materials overrides -- LENGTH items only; null means "use
+  // the organisation default" for that figure.
+  overrideJointWidthMm: number | null;
+  overrideJointDepthMm: number | null;
+  overrideWastePercent: number | null;
   measurements: TakeoffMeasurementItem[];
+  /** 0 for a COUNT item. */
   totalMetres: number;
+  /** Number of COUNT markers; 0 for a LENGTH item. */
+  count: number;
   lineTotalGbp: number;
 };
 
@@ -103,22 +114,33 @@ export type TakeoffDetail = {
 };
 
 function summariseItem(item: {
-  id: string; name: string; colour: string; pricePerMetre: unknown; sortOrder: number;
+  id: string; name: string; colour: string; kind: TakeoffItemKind; pricePerMetre: unknown; sortOrder: number;
+  overrideJointWidthMm: number | null; overrideJointDepthMm: number | null; overrideWastePercent: number | null;
   measurements: Array<{ id: string; pageNumber: number; takeoffFileId: string | null; type: TakeoffMeasurementType; points: unknown; computedMetres: unknown; label: string | null }>;
 }): TakeoffItemDetail {
-  const totalMetres = +item.measurements.reduce((sum, m) => sum + Number(m.computedMetres), 0).toFixed(2);
+  // A COUNT item's "quantity" is how many markers it has, not a summed
+  // distance -- its measurements' computedMetres is always 0 (a single
+  // point has no length) and is never summed into totalMetres.
+  const totalMetres = item.kind === "COUNT" ? 0 : +item.measurements.reduce((sum, m) => sum + Number(m.computedMetres), 0).toFixed(2);
+  const count = item.kind === "COUNT" ? item.measurements.length : 0;
+  const quantity = item.kind === "COUNT" ? count : totalMetres;
   return {
     id: item.id,
     name: item.name,
     colour: item.colour,
+    kind: item.kind,
     pricePerMetre: item.pricePerMetre,
     sortOrder: item.sortOrder,
+    overrideJointWidthMm: item.overrideJointWidthMm,
+    overrideJointDepthMm: item.overrideJointDepthMm,
+    overrideWastePercent: item.overrideWastePercent,
     measurements: item.measurements.map((m) => ({
       id: m.id, pageNumber: m.pageNumber, takeoffFileId: m.takeoffFileId, type: m.type, points: m.points as unknown as Point[],
       computedMetres: m.computedMetres, label: m.label,
     })),
     totalMetres,
-    lineTotalGbp: +(totalMetres * Number(item.pricePerMetre)).toFixed(2),
+    count,
+    lineTotalGbp: +(quantity * Number(item.pricePerMetre)).toFixed(2),
   };
 }
 
@@ -294,7 +316,12 @@ export async function restoreTakeoff(id: string): Promise<void> {
 
 export async function createTakeoffItem(takeoffId: string, data: TakeoffItemInput): Promise<{ id: string }> {
   return db.takeoffItem.create({
-    data: { takeoffId, name: data.name, colour: data.colour, pricePerMetre: data.pricePerMetre, sortOrder: data.sortOrder },
+    data: {
+      takeoffId, name: data.name, colour: data.colour, kind: data.kind, pricePerMetre: data.pricePerMetre, sortOrder: data.sortOrder,
+      overrideJointWidthMm: data.overrideJointWidthMm ?? null,
+      overrideJointDepthMm: data.overrideJointDepthMm ?? null,
+      overrideWastePercent: data.overrideWastePercent ?? null,
+    },
     select: { id: true },
   });
 }
@@ -302,7 +329,12 @@ export async function createTakeoffItem(takeoffId: string, data: TakeoffItemInpu
 export async function updateTakeoffItem(id: string, data: TakeoffItemInput): Promise<void> {
   await db.takeoffItem.update({
     where: { id },
-    data: { name: data.name, colour: data.colour, pricePerMetre: data.pricePerMetre, sortOrder: data.sortOrder },
+    data: {
+      name: data.name, colour: data.colour, kind: data.kind, pricePerMetre: data.pricePerMetre, sortOrder: data.sortOrder,
+      overrideJointWidthMm: data.overrideJointWidthMm ?? null,
+      overrideJointDepthMm: data.overrideJointDepthMm ?? null,
+      overrideWastePercent: data.overrideWastePercent ?? null,
+    },
   });
 }
 
@@ -437,9 +469,16 @@ export async function buildDraftFromTakeoff(takeoffId: string): Promise<TakeoffQ
   if (!takeoff) return null;
   const org = await getOrgSettings();
 
+  // A COUNT item becomes a quantity-N, unit "each" line; LENGTH stays
+  // quantity-metres, unit "m" -- reusing the existing quote builder as-is,
+  // no new quoting engine (per the Drawings Part 2 brief).
   const lineItems = takeoff.items
-    .filter((i) => i.totalMetres > 0)
-    .map((i) => ({ description: i.name, quantity: i.totalMetres, unit: "m", unitPrice: Number(i.pricePerMetre) }));
+    .filter((i) => (i.kind === "COUNT" ? i.count > 0 : i.totalMetres > 0))
+    .map((i) =>
+      i.kind === "COUNT"
+        ? { description: i.name, quantity: i.count, unit: "each", unitPrice: Number(i.pricePerMetre) }
+        : { description: i.name, quantity: i.totalMetres, unit: "m", unitPrice: Number(i.pricePerMetre) }
+    );
 
   return {
     customerId: takeoff.customerId ?? "",

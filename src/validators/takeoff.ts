@@ -97,7 +97,8 @@ export const takeoffItemColourPalette = [
 // Zod schemas
 // ---------------------------------------------------------------------------
 
-export const takeoffMeasurementTypes = ["LENGTH", "CHAIN"] as const;
+export const takeoffMeasurementTypes = ["LENGTH", "CHAIN", "COUNT"] as const;
+export const takeoffItemKinds = ["LENGTH", "COUNT"] as const;
 
 export const pointSchema = z.object({ x: z.number(), y: z.number() });
 
@@ -140,23 +141,40 @@ export type TakeoffCreateInput = z.infer<typeof takeoffCreateSchema>;
 export const takeoffItemSchema = z.object({
   name: z.string().min(1, "Name is required"),
   colour: z.string().min(1),
+  // kind defaults to LENGTH (matching the DB default) so every existing
+  // caller that doesn't know about Drawings Part 2 keeps working
+  // unchanged. pricePerMetre is reused as-is for a COUNT item's price-
+  // per-item -- see the schema comment on TakeoffItem.pricePerMetre for
+  // why this wasn't renamed or split into a second column.
+  kind: z.enum(takeoffItemKinds).default("LENGTH"),
   pricePerMetre: z.coerce.number().nonnegative(),
   sortOrder: z.coerce.number().int().default(0),
+  // Worst-case materials overrides (Drawings Part 2) -- LENGTH items only,
+  // null/omitted means "use the organisation default" for that figure.
+  overrideJointWidthMm: z.coerce.number().int().positive().nullable().optional(),
+  overrideJointDepthMm: z.coerce.number().int().positive().nullable().optional(),
+  overrideWastePercent: z.coerce.number().min(0).nullable().optional(),
 });
 export type TakeoffItemInput = z.infer<typeof takeoffItemSchema>;
 
-export const takeoffMeasurementSchema = z.object({
-  takeoffItemId: z.string().min(1),
-  pageNumber: z.coerce.number().int().positive(),
-  // Which file (of the drawing's possibly several, see Drawings Part 1
-  // Step 4) this page number belongs to. Optional/nullable -- a null here
-  // means "the drawing's first file", the same safety-net convention
-  // documented on TakeoffMeasurement.takeoffFileId.
-  takeoffFileId: z.string().min(1).optional(),
-  type: z.enum(takeoffMeasurementTypes),
-  points: z.array(pointSchema).min(2, "A measurement needs at least two points"),
-  label: z.string().optional(),
-});
+export const takeoffMeasurementSchema = z
+  .object({
+    takeoffItemId: z.string().min(1),
+    pageNumber: z.coerce.number().int().positive(),
+    // Which file (of the drawing's possibly several, see Drawings Part 1
+    // Step 4) this page number belongs to. Optional/nullable -- a null here
+    // means "the drawing's first file", the same safety-net convention
+    // documented on TakeoffMeasurement.takeoffFileId.
+    takeoffFileId: z.string().min(1).optional(),
+    type: z.enum(takeoffMeasurementTypes),
+    // A COUNT measurement is a single dropped marker -- one point, not a
+    // line -- so the "at least two points" rule only applies to LENGTH/
+    // CHAIN.
+    points: z.array(pointSchema).min(1, "A measurement needs at least one point"),
+    label: z.string().optional(),
+  })
+  .refine((v) => v.type === "COUNT" || v.points.length >= 2, { message: "A length or chain needs at least two points", path: ["points"] })
+  .refine((v) => v.type !== "COUNT" || v.points.length === 1, { message: "A count marker is a single point", path: ["points"] });
 export type TakeoffMeasurementInput = z.infer<typeof takeoffMeasurementSchema>;
 
 export const scalePresetSchema = z.object({
@@ -192,3 +210,67 @@ export const takeoffItemPresetSchema = z.object({
   pricePerMetre: z.coerce.number().nonnegative(),
 });
 export type TakeoffItemPresetInput = z.infer<typeof takeoffItemPresetSchema>;
+
+// ---------------------------------------------------------------------------
+// Worst-case materials (Drawings Part 2) -- a deliberately conservative
+// estimate of how many sealant tubes to BUY, never how much to charge the
+// customer. The quote stays on measured metres; this is for ordering only.
+//
+// ml per metre of joint = width_mm * depth_mm (1mm^2 cross-section over 1m
+// of run = 1ml of sealant), then waste% on top, then divide by the tube
+// size and round UP -- you can never buy half a tube, and the whole point
+// is to never come up short on site.
+// ---------------------------------------------------------------------------
+
+export const ALLOWED_TUBE_ML = [310, 400, 600] as const;
+
+export type MaterialDefaultsValues = { jointWidthMm: number; jointDepthMm: number; tubeMl: number; wastePercent: number };
+export type MaterialItemOverride = { jointWidthMm?: number | null; jointDepthMm?: number | null; wastePercent?: number | null };
+
+export type MaterialCalcResult = {
+  jointWidthMm: number;
+  jointDepthMm: number;
+  wastePercent: number;
+  tubeMl: number;
+  mlNeeded: number;
+  tubesNeeded: number;
+  widthIsDefault: boolean;
+  depthIsDefault: boolean;
+  wasteIsDefault: boolean;
+  /** e.g. "32.4 m x 150 ml/m + 10% = 5,346 ml -> 18 x 310 ml tubes", for the hover/tooltip the brief asks for. */
+  workingText: string;
+};
+
+/**
+ * Pure function -- no imports, no DB -- so it's trivially unit-testable
+ * (see scripts/check-takeoff-materials.mjs) and safe to call from either a
+ * server service or a client component. `override` fields of null/
+ * undefined fall back to `defaults`; passing no override at all means
+ * "use the organisation defaults for everything".
+ */
+export function calculateMaterialTubes(metres: number, defaults: MaterialDefaultsValues, override?: MaterialItemOverride | null): MaterialCalcResult {
+  const jointWidthMm = override?.jointWidthMm ?? defaults.jointWidthMm;
+  const jointDepthMm = override?.jointDepthMm ?? defaults.jointDepthMm;
+  const wastePercent = override?.wastePercent ?? defaults.wastePercent;
+  const tubeMl = defaults.tubeMl;
+
+  const mlPerMetre = jointWidthMm * jointDepthMm;
+  const mlBeforeWaste = metres * mlPerMetre;
+  const mlNeeded = mlBeforeWaste * (1 + wastePercent / 100);
+  const tubesNeeded = Math.ceil(mlNeeded / tubeMl);
+
+  const workingText = `${metres.toFixed(1)} m x ${mlPerMetre} ml/m + ${wastePercent}% = ${Math.round(mlNeeded).toLocaleString("en-GB")} ml -> ${tubesNeeded} x ${tubeMl} ml tubes`;
+
+  return {
+    jointWidthMm,
+    jointDepthMm,
+    wastePercent,
+    tubeMl,
+    mlNeeded: +mlNeeded.toFixed(1),
+    tubesNeeded,
+    widthIsDefault: override?.jointWidthMm == null,
+    depthIsDefault: override?.jointDepthMm == null,
+    wasteIsDefault: override?.wastePercent == null,
+    workingText,
+  };
+}
