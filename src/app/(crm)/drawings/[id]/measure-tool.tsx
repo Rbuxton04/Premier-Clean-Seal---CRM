@@ -6,7 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { ensurePdfWorkerConfigured } from "../pdf-worker-setup";
-import type { TakeoffDetail, TakeoffItemDetail } from "@/services/takeoff.service";
+import type { TakeoffDetail, TakeoffItemDetail, TakeoffMeasurementItem } from "@/services/takeoff.service";
 import type { ScalePresetItem } from "@/services/scale-preset.service";
 import type { RateCardItem } from "@/services/takeoff-rate-card.service";
 import { chainLengthPoints, resolvePointsPerMetre, computeMeasurementMetres, snapPointToAngle, type Point, type MaterialDefaultsValues } from "@/validators/takeoff";
@@ -16,7 +16,7 @@ import {
   updateTakeoffScaleAction, updateTakeoffDetailsAction, createScalePresetAction,
   addAllFromRateCardAction, saveItemAsPresetAction,
   createTakeoffFileAction, renameTakeoffFileAction, moveTakeoffFileAction, removeTakeoffFileAction, countMeasurementsOnFileAction,
-  createTakeoffNoteAction, updateTakeoffNoteAction, deleteTakeoffNoteAction,
+  createTakeoffNoteAction, updateTakeoffNoteAction, deleteTakeoffNoteAction, restoreTakeoffNoteAction,
 } from "../actions";
 import { ItemsPanel } from "./items-panel";
 import { ScaleControls } from "./scale-controls";
@@ -29,6 +29,7 @@ import { MobileWorkspaceBar } from "./workspace/mobile-workspace-bar";
 import { PagesPanel } from "./workspace/pages-panel";
 import { SearchPanel, type SearchResult } from "./workspace/search-panel";
 import { MaterialsPanel } from "./workspace/materials-panel";
+import { MeasurementsListPanel, type MeasurementRow } from "./workspace/measurements-list-panel";
 import { useWorkspaceLayout, type PanelId } from "./workspace/use-workspace-layout";
 import type { ActiveTool } from "./workspace/types";
 
@@ -44,6 +45,7 @@ const PANEL_TITLES: Record<PanelId, string> = {
   pages: "Pages",
   search: "Search",
   selected: "Selected",
+  measurements: "Measurements",
   materials: "Materials",
   output: "Output",
 };
@@ -130,12 +132,83 @@ export function MeasureTool({
   const [labelDraft, setLabelDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
+  // --- Undo toast (Drawings Part 2, section 5) -- a single-slot "undo the
+  // last thing" rather than a full stack; section 7's Ctrl+Z undo/redo
+  // generalises this same announceUndo call into a real stack later, so
+  // this isn't throwaway -- it's the first slice of that same mechanism. --
+  const [lastAction, setLastAction] = useState<{ label: string; undo: () => Promise<void> } | null>(null);
+  const lastActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  function announceUndo(label: string, undo: () => Promise<void>) {
+    setLastAction({ label, undo });
+    if (lastActionTimerRef.current) clearTimeout(lastActionTimerRef.current);
+    lastActionTimerRef.current = setTimeout(() => setLastAction(null), 6000);
+  }
+
+  async function runUndo() {
+    if (!lastAction) return;
+    const { undo } = lastAction;
+    setLastAction(null);
+    await undo();
+  }
+
   // --- Notes (Drawings Part 2) -- pins on the plan, independent of items ---
   const [notes, setNotes] = useState<TakeoffDetail["notes"]>(takeoff.notes);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [noteTextDraft, setNoteTextDraft] = useState("");
   const noteDragRef = useRef<{ id: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
   const noteDraggedRef = useRef(false);
+
+  // --- Show/hide per item (Drawings Part 2, section 5) -- a view
+  // preference only, persisted per drawing in localStorage; never touches
+  // totals, quotes or exports (see the comment on pageMeasurements below). --
+  const [hiddenItemIds, setHiddenItemIds] = useState<Set<string>>(new Set());
+  const hiddenItemsStorageKey = `drawing-hidden-items-${takeoff.id}`;
+  useEffect(() => {
+    try {
+      const raw = window.localStorage.getItem(hiddenItemsStorageKey);
+      if (raw) setHiddenItemIds(new Set(JSON.parse(raw)));
+    } catch {
+      // Storage unavailable/blocked -- everything just starts visible.
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [takeoff.id]);
+
+  function persistHiddenItems(next: Set<string>) {
+    setHiddenItemIds(next);
+    try {
+      window.localStorage.setItem(hiddenItemsStorageKey, JSON.stringify(Array.from(next)));
+    } catch {
+      // Not fatal -- the session still works, it just won't remember next time.
+    }
+  }
+  function toggleItemVisibility(itemId: string) {
+    const next = new Set(hiddenItemIds);
+    if (next.has(itemId)) next.delete(itemId);
+    else next.add(itemId);
+    persistHiddenItems(next);
+  }
+  function showAllItems() {
+    persistHiddenItems(new Set());
+  }
+  function hideAllItems() {
+    persistHiddenItems(new Set(items.map((it) => it.id)));
+  }
+
+  // --- Measurements list (Drawings Part 2, section 5) -- hover highlight
+  // and "centre it on jump" support ------------------------------------
+  const [hoveredRowKey, setHoveredRowKey] = useState<string | null>(null);
+  const pendingCenterRef = useRef<Point | null>(null);
+  useEffect(() => {
+    const container = viewerContainerRef.current;
+    const target = pendingCenterRef.current;
+    if (!container || !target) return;
+    const screen = pointToScreen(target);
+    container.scrollLeft = screen.x - container.clientWidth / 2;
+    container.scrollTop = screen.y - container.clientHeight / 2;
+    pendingCenterRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [viewportSize]);
 
   // --- Load the PDF document once -----------------------------------------
   // Streamed through a same-origin, auth-gated proxy (/api/takeoffs/[id]/file)
@@ -453,35 +526,46 @@ export function MeasureTool({
   }
 
   // --- Measuring -----------------------------------------------------------
+  /** Shared by every path that adds one measurement to the local items mirror (new draw, count marker, undo-restoring an erased one) -- keeps totalMetres/count/lineTotalGbp recompute in exactly one place. */
+  function addMeasurementToItemState(itemId: string, measurement: TakeoffMeasurementItem) {
+    setItems((cur) =>
+      cur.map((it) => {
+        if (it.id !== itemId) return it;
+        const measurements = [...it.measurements, measurement];
+        if (it.kind === "COUNT") {
+          const count = it.count + 1;
+          return { ...it, measurements, count, lineTotalGbp: +(count * Number(it.pricePerMetre)).toFixed(2) };
+        }
+        const totalMetres = +(it.totalMetres + Number(measurement.computedMetres)).toFixed(2);
+        return { ...it, measurements, totalMetres, lineTotalGbp: +(totalMetres * Number(it.pricePerMetre)).toFixed(2) };
+      })
+    );
+  }
+
   async function finalizeMeasurement(points: Point[], type: "LENGTH" | "CHAIN") {
     if (!selectedItemId) {
       setMessage("Select an item first.");
       setDrawPoints([]);
       return;
     }
-    const result = await createMeasurementAction(
-      takeoff.id,
-      { takeoffItemId: selectedItemId, pageNumber: currentPage, takeoffFileId: activeFileId || undefined, type, points },
-      pointsPerMetre
-    );
+    const itemId = selectedItemId;
+    const pageNumber = currentPage;
+    const takeoffFileId = activeFileId || null;
+    const result = await createMeasurementAction(takeoff.id, { takeoffItemId: itemId, pageNumber, takeoffFileId: takeoffFileId ?? undefined, type, points }, pointsPerMetre);
     setDrawPoints([]);
     setHoverPoint(null);
     if (!result.ok) {
       setMessage(result.message);
       return;
     }
-    setItems((cur) =>
-      cur.map((it) =>
-        it.id === selectedItemId
-          ? {
-              ...it,
-              measurements: [...it.measurements, { id: result.data.id, pageNumber: currentPage, takeoffFileId: activeFileId || null, type, points, computedMetres: result.data.computedMetres, label: null }],
-              totalMetres: +(it.totalMetres + result.data.computedMetres).toFixed(2),
-              lineTotalGbp: +((it.totalMetres + result.data.computedMetres) * Number(it.pricePerMetre)).toFixed(2),
-            }
-          : it
-      )
-    );
+    const measurement: TakeoffMeasurementItem = { id: result.data.id, pageNumber, takeoffFileId, type, points, computedMetres: result.data.computedMetres, label: null };
+    addMeasurementToItemState(itemId, measurement);
+    const item = items.find((i) => i.id === itemId);
+    if (item) {
+      announceUndo(`Deleted ${type === "CHAIN" ? "chain" : "length"} on ${item.name}`, async () => {
+        await removeMeasurement(itemId, measurement.id);
+      });
+    }
   }
 
   /** A COUNT marker is one point, one measurement, quantity 1 -- see the TakeoffItemDetail.count comment in takeoff.service.ts. */
@@ -490,27 +574,18 @@ export function MeasureTool({
       setMessage("Select a count item first.");
       return;
     }
-    const result = await createMeasurementAction(
-      takeoff.id,
-      { takeoffItemId: selectedItemId, pageNumber: currentPage, takeoffFileId: activeFileId || undefined, type: "COUNT", points: [p] },
-      pointsPerMetre
-    );
+    const itemId = selectedItemId;
+    const pageNumber = currentPage;
+    const takeoffFileId = activeFileId || null;
+    const result = await createMeasurementAction(takeoff.id, { takeoffItemId: itemId, pageNumber, takeoffFileId: takeoffFileId ?? undefined, type: "COUNT", points: [p] }, pointsPerMetre);
     if (!result.ok) {
       setMessage(result.message);
       return;
     }
-    setItems((cur) =>
-      cur.map((it) =>
-        it.id === selectedItemId
-          ? {
-              ...it,
-              measurements: [...it.measurements, { id: result.data.id, pageNumber: currentPage, takeoffFileId: activeFileId || null, type: "COUNT", points: [p], computedMetres: 0, label: null }],
-              count: it.count + 1,
-              lineTotalGbp: +((it.count + 1) * Number(it.pricePerMetre)).toFixed(2),
-            }
-          : it
-      )
-    );
+    const measurement: TakeoffMeasurementItem = { id: result.data.id, pageNumber, takeoffFileId, type: "COUNT", points: [p], computedMetres: 0, label: null };
+    addMeasurementToItemState(itemId, measurement);
+    const item = items.find((i) => i.id === itemId);
+    if (item) announceUndo(`Added count marker on ${item.name}`, async () => removeMeasurement(itemId, measurement.id));
   }
 
   function handleOverlayClick(e: React.MouseEvent) {
@@ -762,12 +837,13 @@ export function MeasureTool({
   }
 
   async function removeMeasurement(itemId: string, measurementId: string) {
+    const item = items.find((i) => i.id === itemId);
+    const removed = item?.measurements.find((m) => m.id === measurementId);
     const result = await deleteMeasurementAction(takeoff.id, measurementId);
     if (result.ok) {
       setItems((cur) =>
         cur.map((it) => {
           if (it.id !== itemId) return it;
-          const removed = it.measurements.find((m) => m.id === measurementId);
           const measurements = it.measurements.filter((m) => m.id !== measurementId);
           if (it.kind === "COUNT") {
             const count = it.count - (removed ? 1 : 0);
@@ -777,6 +853,18 @@ export function MeasureTool({
           return { ...it, measurements, totalMetres, lineTotalGbp: +(totalMetres * Number(it.pricePerMetre)).toFixed(2) };
         })
       );
+      if (removed && item) {
+        announceUndo(`Deleted ${item.name} measurement`, async () => {
+          const recreated = await createMeasurementAction(
+            takeoff.id,
+            { takeoffItemId: itemId, pageNumber: removed.pageNumber, takeoffFileId: removed.takeoffFileId ?? undefined, type: removed.type, points: removed.points, label: removed.label ?? undefined },
+            pointsPerMetre
+          );
+          if (recreated.ok) {
+            addMeasurementToItemState(itemId, { ...removed, id: recreated.data.id, computedMetres: recreated.data.computedMetres });
+          }
+        });
+      }
     }
   }
 
@@ -824,9 +912,23 @@ export function MeasureTool({
 
   async function deleteSelectedNote() {
     if (!selectedNoteId) return;
-    const result = await deleteTakeoffNoteAction(takeoff.id, selectedNoteId);
-    if (result.ok) setNotes((cur) => cur.filter((n) => n.id !== selectedNoteId));
+    await removeNote(selectedNoteId);
     setSelectedNoteId(null);
+  }
+
+  /** Soft-deleted, so undo is an exact restore (same id and text), not a re-create. */
+  async function removeNote(noteId: string) {
+    const note = notes.find((n) => n.id === noteId);
+    const result = await deleteTakeoffNoteAction(takeoff.id, noteId);
+    if (result.ok) {
+      setNotes((cur) => cur.filter((n) => n.id !== noteId));
+      if (note) {
+        announceUndo("Deleted note", async () => {
+          const restored = await restoreTakeoffNoteAction(takeoff.id, noteId);
+          if (restored.ok) setNotes((cur) => [...cur, note]);
+        });
+      }
+    }
   }
 
   /** Drag-to-move a note pin in Select mode -- stops the overlay's own pan-drag from starting, via stopPropagation on the pointerdown that triggers this. */
@@ -1072,13 +1174,68 @@ export function MeasureTool({
     let n = 0;
     for (const m of it.measurements) if (m.type === "COUNT") countMarkerNumbers.set(m.id, ++n);
   }
-  const pageMeasurements = items.flatMap((it) =>
-    it.measurements
-      .filter((m) => m.pageNumber === currentPage && (m.takeoffFileId ?? firstFileId) === activeFileId)
-      .map((m) => ({ ...m, colour: it.colour, itemId: it.id }))
-  );
+  // Show/hide (Drawings Part 2, section 5) -- view-only: hidden items are
+  // skipped here (canvas render AND hit-testing, since a filtered-out
+  // measurement simply has no DOM element to click), but items/totals
+  // themselves (ItemsPanel, OutputActions, MaterialsPanel, grand totals)
+  // never read hiddenItemIds at all, so visibility can never change a
+  // total, quote or export.
+  const pageMeasurements = items
+    .filter((it) => !hiddenItemIds.has(it.id))
+    .flatMap((it) =>
+      it.measurements
+        .filter((m) => m.pageNumber === currentPage && (m.takeoffFileId ?? firstFileId) === activeFileId)
+        .map((m) => ({ ...m, colour: it.colour, itemId: it.id }))
+    );
   const pageNotes = notes.filter((n) => n.pageNumber === currentPage && (n.takeoffFileId ?? firstFileId) === activeFileId);
   const drawingMetres = drawPoints.length > 0 ? chainLengthPoints(hoverPoint ? [...drawPoints, hoverPoint] : drawPoints) / pointsPerMetre : null;
+
+  // --- Measurements list (Drawings Part 2, section 5) ---------------------
+  function fileNameFor(fileId: string | null): string {
+    const resolvedId = fileId ?? firstFileId;
+    return files.find((f) => f.id === resolvedId)?.name ?? "Plan";
+  }
+  const measurementRows: MeasurementRow[] = [
+    ...items.flatMap((it) =>
+      it.measurements.map((m): MeasurementRow => ({
+        key: m.id,
+        group: "item",
+        itemId: it.id,
+        itemName: it.name,
+        itemColour: it.colour,
+        measurementId: m.id,
+        fileId: m.takeoffFileId,
+        fileName: fileNameFor(m.takeoffFileId),
+        pageNumber: m.pageNumber,
+        label: m.label,
+        point: m.points[0],
+        sizeText: m.type === "COUNT" ? "1 (count)" : `${Number(m.computedMetres)} m`,
+        sortSize: m.type === "COUNT" ? 1 : Number(m.computedMetres),
+      }))
+    ),
+    ...notes.map((n): MeasurementRow => ({
+      key: n.id,
+      group: "note",
+      noteId: n.id,
+      fileId: n.takeoffFileId,
+      fileName: fileNameFor(n.takeoffFileId),
+      pageNumber: n.pageNumber,
+      label: n.text,
+      point: { x: n.x, y: n.y },
+      sizeText: "Note",
+      sortSize: 0,
+    })),
+  ];
+
+  /** Jumps to a row's file/page, selects it, and centres it once that page has actually rendered (pendingCenterRef, resolved by the effect watching viewportSize below) -- the same "wait for the real render" pattern zoom-at-cursor already uses. */
+  function jumpToRow(row: MeasurementRow) {
+    const targetFileId = row.fileId ?? firstFileId ?? activeFileId;
+    if (targetFileId !== activeFileId) setActiveFileId(targetFileId);
+    setCurrentPage(row.pageNumber);
+    pendingCenterRef.current = row.point;
+    if (row.group === "item" && row.itemId && row.measurementId) selectMeasurement(row.itemId, row.measurementId, row.label);
+    else if (row.noteId) selectNote(row.noteId, row.label ?? "");
+  }
 
   // Highlight boxes for the current search match, converted through the
   // SAME pointToScreen used for measurements -- so they land correctly at
@@ -1109,6 +1266,10 @@ export function MeasureTool({
         onSaveItemToRateCard={handleSaveItemToRateCard}
         onUpdateItemOverrides={handleUpdateItemOverrides}
         materialDefaults={materialDefaults}
+        hiddenItemIds={hiddenItemIds}
+        onToggleVisibility={toggleItemVisibility}
+        onShowAll={showAllItems}
+        onHideAll={hideAllItems}
         totalMetres={totalMetres}
         grandTotalGbp={grandTotalGbp}
       />
@@ -1188,6 +1349,7 @@ export function MeasureTool({
       <p className="text-xs text-muted-foreground">Click a measurement, count marker or note on the plan to select it.</p>
     ),
     materials: <MaterialsPanel items={items} defaults={materialDefaults} />,
+    measurements: <MeasurementsListPanel rows={measurementRows} currentPage={currentPage} onJump={jumpToRow} onHoverRow={setHoveredRowKey} />,
     output: (
       <div className="space-y-2">
         <OutputActions takeoffId={takeoff.id} items={items} grandTotalGbp={grandTotalGbp} />
@@ -1211,6 +1373,12 @@ export function MeasureTool({
 
   return (
     <div className={fullScreen ? "fixed inset-0 z-40 flex flex-col gap-2 overflow-auto bg-background p-3" : "flex flex-col gap-2"}>
+      {lastAction && (
+        <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-card px-4 py-2 text-sm shadow-xl">
+          <span>{lastAction.label}</span>
+          <Button type="button" size="sm" variant="outline" onClick={runUndo}>Undo</Button>
+        </div>
+      )}
       <input
         ref={fileUploadInputRef}
         type="file"
@@ -1294,13 +1462,15 @@ export function MeasureTool({
                   {pageMeasurements.map((m) => {
                     const screenPts = m.points.map(pointToScreen);
                     const isSelected = selectedMeasurement?.measurementId === m.id;
+                    const isHovered = hoveredRowKey === m.id;
+                    const emphasised = isSelected || isHovered;
 
                     if (m.type === "COUNT") {
                       const p = screenPts[0];
                       const n = countMarkerNumbers.get(m.id) ?? "";
                       return (
                         <g key={m.id} onClick={(e) => { e.stopPropagation(); handleMeasurementClick(m.itemId, m.id, m.label); }} className="cursor-pointer">
-                          <circle cx={p.x} cy={p.y} r={isSelected ? 11 : 9} fill={m.colour} stroke="#fff" strokeWidth={isSelected ? 3 : 2} />
+                          <circle cx={p.x} cy={p.y} r={emphasised ? 11 : 9} fill={m.colour} stroke="#fff" strokeWidth={emphasised ? 3 : 2} />
                           <text x={p.x} y={p.y} fontSize={10} fontWeight={700} fill="#fff" textAnchor="middle" dominantBaseline="central">{n}</text>
                           {m.label && (
                             <text x={p.x} y={p.y - 15} fontSize={11} fill={m.colour} fontWeight={600} style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}>{m.label}</text>
@@ -1316,7 +1486,7 @@ export function MeasureTool({
                           points={screenPts.map((p) => `${p.x},${p.y}`).join(" ")}
                           fill="none"
                           stroke={m.colour}
-                          strokeWidth={isSelected ? 4 : 2.5}
+                          strokeWidth={emphasised ? 4 : 2.5}
                           strokeDasharray={isSelected ? "6 3" : undefined}
                         />
                         {screenPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill={m.colour} />)}
@@ -1330,6 +1500,7 @@ export function MeasureTool({
                   {pageNotes.map((note) => {
                     const p = pointToScreen({ x: note.x, y: note.y });
                     const isSelected = selectedNoteId === note.id;
+                    const emphasised = isSelected || hoveredRowKey === note.id;
                     return (
                       <g
                         key={note.id}
@@ -1344,14 +1515,13 @@ export function MeasureTool({
                             return;
                           }
                           if (activeTool === "erase") {
-                            setSelectedNoteId(note.id);
-                            deleteSelectedNote();
+                            removeNote(note.id);
                             return;
                           }
                           selectNote(note.id, note.text);
                         }}
                       >
-                        <circle cx={p.x} cy={p.y} r={isSelected ? 10 : 8} fill="#3C2263" stroke="#fff" strokeWidth={2} />
+                        <circle cx={p.x} cy={p.y} r={emphasised ? 10 : 8} fill="#3C2263" stroke="#fff" strokeWidth={2} />
                         <text x={p.x} y={p.y} fontSize={11} fontWeight={700} fill="#fff" textAnchor="middle" dominantBaseline="central">!</text>
                         <title>{note.text}</title>
                         {isSelected && (

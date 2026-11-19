@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // disabled storage) or simply not exist (SSR's first render), and this must
 // never crash the workspace over a convenience feature.
 
-export type PanelId = "items" | "scale" | "pages" | "search" | "selected" | "output" | "materials";
+export type PanelId = "items" | "scale" | "pages" | "search" | "selected" | "output" | "materials" | "measurements";
 
 export type PanelState = {
   collapsed: boolean;
@@ -27,7 +27,7 @@ export type WorkspaceLayout = {
 
 const STORAGE_KEY = "drawings-workspace-layout-v1";
 
-const DEFAULT_PANEL_ORDER: PanelId[] = ["items", "scale", "pages", "search", "selected", "materials", "output"];
+const DEFAULT_PANEL_ORDER: PanelId[] = ["items", "scale", "pages", "search", "selected", "measurements", "materials", "output"];
 
 function defaultPanelState(): PanelState {
   return { collapsed: false, floating: false, floatX: 80, floatY: 80 };

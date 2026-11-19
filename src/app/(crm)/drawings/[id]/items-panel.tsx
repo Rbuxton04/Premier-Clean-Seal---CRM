@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Check, ListOrdered, BookmarkPlus, Layers, Settings2 } from "lucide-react";
+import { Plus, Trash2, Check, ListOrdered, BookmarkPlus, Layers, Settings2, Eye, EyeOff } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -25,13 +25,18 @@ export type ItemsPanelProps = {
   onSaveItemToRateCard: (item: TakeoffItemDetail) => Promise<void>;
   onUpdateItemOverrides: (id: string, overrides: ItemOverrides) => Promise<void>;
   materialDefaults: MaterialDefaultsValues;
+  hiddenItemIds: Set<string>;
+  onToggleVisibility: (id: string) => void;
+  onShowAll: () => void;
+  onHideAll: () => void;
   totalMetres: number;
   grandTotalGbp: number;
 };
 
 export function ItemsPanel({
   items, rateCardItems, selectedItemId, onSelectItem, onCreateItem, onUpdateItemRate, onDeleteItem,
-  onAddAllFromRateCard, onSaveItemToRateCard, onUpdateItemOverrides, materialDefaults, totalMetres, grandTotalGbp,
+  onAddAllFromRateCard, onSaveItemToRateCard, onUpdateItemOverrides, materialDefaults,
+  hiddenItemIds, onToggleVisibility, onShowAll, onHideAll, totalMetres, grandTotalGbp,
 }: ItemsPanelProps) {
   const [expandedMaterialsId, setExpandedMaterialsId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
@@ -99,6 +104,12 @@ export function ItemsPanel({
         <Link href="/drawings/rate-card" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
           <ListOrdered className="h-3.5 w-3.5" /> Manage rate card
         </Link>
+        {items.length > 0 && (
+          <span className="ml-auto flex items-center gap-2">
+            <button type="button" onClick={onShowAll} className="text-muted-foreground hover:text-foreground">Show all</button>
+            <button type="button" onClick={onHideAll} className="text-muted-foreground hover:text-foreground">Hide all</button>
+          </span>
+        )}
       </div>
       {message && <p className="text-xs text-brand-plum">{message}</p>}
 
@@ -169,19 +180,30 @@ export function ItemsPanel({
       ) : (
         <ul className="space-y-1.5">
           {items.map((item) => (
-            <li key={item.id}>
-              <button
-                type="button"
-                onClick={() => onSelectItem(item.id)}
-                className={cn(
-                  "flex w-full items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors",
-                  selectedItemId === item.id ? "border-brand-plum bg-brand-plum-soft" : "hover:bg-accent"
-                )}
-              >
-                <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: item.colour }} />
-                <span className="flex-1 truncate font-medium">{item.name}</span>
-                {selectedItemId === item.id && <Check className="h-3.5 w-3.5 shrink-0 text-brand-plum" />}
-              </button>
+            <li key={item.id} className={hiddenItemIds.has(item.id) ? "opacity-50" : undefined}>
+              <div className="flex items-center gap-1">
+                <button
+                  type="button"
+                  onClick={() => onSelectItem(item.id)}
+                  className={cn(
+                    "flex flex-1 items-center gap-2 rounded-md border p-2 text-left text-sm transition-colors",
+                    selectedItemId === item.id ? "border-brand-plum bg-brand-plum-soft" : "hover:bg-accent"
+                  )}
+                >
+                  <span className="h-3 w-3 shrink-0 rounded-full" style={{ backgroundColor: item.colour }} />
+                  <span className="flex-1 truncate font-medium">{item.name}</span>
+                  {selectedItemId === item.id && <Check className="h-3.5 w-3.5 shrink-0 text-brand-plum" />}
+                </button>
+                <button
+                  type="button"
+                  onClick={() => onToggleVisibility(item.id)}
+                  className="text-muted-foreground hover:text-foreground"
+                  aria-label={hiddenItemIds.has(item.id) ? `Show ${item.name}` : `Hide ${item.name}`}
+                  title={hiddenItemIds.has(item.id) ? "Hidden on the plan -- click to show" : "Hide on the plan"}
+                >
+                  {hiddenItemIds.has(item.id) ? <EyeOff className="h-3.5 w-3.5" /> : <Eye className="h-3.5 w-3.5" />}
+                </button>
+              </div>
               <div className="ml-5 mt-1 flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
                 <span>{item.kind === "COUNT" ? item.count : item.totalMetres}{item.kind === "COUNT" ? "" : " m"}</span>
                 <span>×</span>
