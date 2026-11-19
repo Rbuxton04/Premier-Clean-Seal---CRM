@@ -74,6 +74,26 @@ export function computeMeasurementMetres(points: Point[], pointsPerMetre: number
   return pointsToMetres(chainLengthPoints(points), pointsPerMetre);
 }
 
+/**
+ * Shift-lock (Drawings Part 2, section 2) -- the pure angle-snap math,
+ * deliberately separated from the view-space conversion that calls it
+ * (measure-tool.tsx's applyShiftLock) so this one piece is unit-testable
+ * on its own (see scripts/check-takeoff-shift-lock.mjs). Snaps `raw`
+ * (relative to `from`) to the nearest multiple of `stepRadians` (default
+ * 45 degrees), keeping the same distance from `from`. Works in whatever
+ * coordinate space it's given -- the caller is responsible for that space
+ * being "as viewed" (on-screen/display space, not the stored unrotated
+ * point space) for the lock to respect the current view rotation.
+ */
+export function snapPointToAngle(from: Point, raw: Point, stepRadians: number = Math.PI / 4): Point {
+  const dx = raw.x - from.x;
+  const dy = raw.y - from.y;
+  const distance = Math.hypot(dx, dy);
+  if (distance < 1e-6) return raw;
+  const snappedAngle = Math.round(Math.atan2(dy, dx) / stepRadians) * stepRadians;
+  return { x: from.x + distance * Math.cos(snappedAngle), y: from.y + distance * Math.sin(snappedAngle) };
+}
+
 // ---------------------------------------------------------------------------
 // Colours -- a starter palette for new items; the colour picker also always
 // allows any custom hex via a native <input type="color">, since items are

@@ -9,7 +9,7 @@ import { ensurePdfWorkerConfigured } from "../pdf-worker-setup";
 import type { TakeoffDetail, TakeoffItemDetail } from "@/services/takeoff.service";
 import type { ScalePresetItem } from "@/services/scale-preset.service";
 import type { RateCardItem } from "@/services/takeoff-rate-card.service";
-import { chainLengthPoints, resolvePointsPerMetre, computeMeasurementMetres, type Point, type MaterialDefaultsValues } from "@/validators/takeoff";
+import { chainLengthPoints, resolvePointsPerMetre, computeMeasurementMetres, snapPointToAngle, type Point, type MaterialDefaultsValues } from "@/validators/takeoff";
 import {
   createMeasurementAction, updateMeasurementLabelAction, deleteMeasurementAction, clearAllMeasurementsAction,
   createTakeoffItemAction, updateTakeoffItemAction, deleteTakeoffItemAction,
@@ -110,6 +110,7 @@ export function MeasureTool({
   const panRef = useRef<{ startX: number; startY: number; startScrollLeft: number; startScrollTop: number } | null>(null);
   const panMovedRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
+  const [shiftHeld, setShiftHeld] = useState(false);
 
   const [pointsPerMetre, setPointsPerMetre] = useState(takeoff.pointsPerMetre);
   const [scaleRatioLabel, setScaleRatioLabel] = useState(takeoff.scaleRatioLabel);
@@ -295,8 +296,9 @@ export function MeasureTool({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [drawPoints, drawIsChain]);
 
-  // --- Keyboard: holding Space pans with any tool (a separate effect since
-  // this needs keyup too, unlike the shortcuts above) ----------------------
+  // --- Keyboard: holding Space pans, holding Shift locks the current
+  // draw to 0/45/90 degrees -- a separate effect since both need keyup
+  // too, unlike the tool shortcuts above --------------------------------
   useEffect(() => {
     function isTypingTarget(e: KeyboardEvent): boolean {
       const target = e.target as HTMLElement | null;
@@ -307,9 +309,11 @@ export function MeasureTool({
         e.preventDefault(); // stop the page itself from scrolling on Space
         setSpaceHeld(true);
       }
+      if (e.key === "Shift" && !isTypingTarget(e)) setShiftHeld(true);
     }
     function onKeyUp(e: KeyboardEvent) {
       if (e.code === "Space") setSpaceHeld(false);
+      if (e.key === "Shift") setShiftHeld(false);
     }
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
@@ -318,6 +322,24 @@ export function MeasureTool({
       window.removeEventListener("keyup", onKeyUp);
     };
   }, []);
+
+  /**
+   * Shift-lock (Drawings Part 2, section 2): constrains the segment from
+   * the previous point to the nearest of 0/45/90 degrees (and their
+   * mirrors), measured "as viewed" -- i.e. in on-screen display space,
+   * which already reflects the current view rotation (Part 1, Step 3) --
+   * rather than in the unrotated stored-point space. Works entirely
+   * through the same proven pointToScreen/screenToPointFromOverlay
+   * conversion everything else on the canvas uses, so it stays correct at
+   * any zoom/pan/rotation with no coordinate math of its own beyond the
+   * angle snap itself.
+   */
+  function applyShiftLock(rawPoint: Point, fromPoint: Point): Point {
+    const fromScreen = pointToScreen(fromPoint);
+    const rawScreen = pointToScreen(rawPoint);
+    const snappedScreen = snapPointToAngle(fromScreen, rawScreen);
+    return screenToPointFromOverlay(snappedScreen.x, snappedScreen.y);
+  }
 
   /**
    * Converts a click into the STORED point space -- which stays relative
@@ -515,16 +537,17 @@ export function MeasureTool({
       setMessage("Select or add an item before measuring.");
       return;
     }
-    const p = screenToPoint(e.clientX, e.clientY);
+    const rawPoint = screenToPoint(e.clientX, e.clientY);
     // Chain is Ctrl+click on the Length tool, not its own palette tool --
     // see the comment on ActiveTool for why.
     const wantsChain = e.ctrlKey || e.metaKey;
 
     if (drawPoints.length === 0) {
-      setDrawPoints([p]);
+      setDrawPoints([rawPoint]);
       setDrawIsChain(wantsChain);
       return;
     }
+    const p = e.shiftKey ? applyShiftLock(rawPoint, drawPoints[drawPoints.length - 1]) : rawPoint;
     if (!drawIsChain) {
       finalizeMeasurement([...drawPoints, p], "LENGTH");
       return;
@@ -539,7 +562,9 @@ export function MeasureTool({
 
   function handleOverlayMouseMove(e: React.MouseEvent) {
     if (drawPoints.length === 0 && !calibrating) return;
-    setHoverPoint(screenToPoint(e.clientX, e.clientY));
+    const rawPoint = screenToPoint(e.clientX, e.clientY);
+    const locked = !calibrating && e.shiftKey && drawPoints.length > 0 ? applyShiftLock(rawPoint, drawPoints[drawPoints.length - 1]) : rawPoint;
+    setHoverPoint(locked);
   }
 
   function undoLastPoint() {
@@ -1369,6 +1394,7 @@ export function MeasureTool({
             scaleLabel={scaleRatioLabel ?? "Calibrated"}
             cursor={hoverPoint}
             zoomPercent={renderScale * 100}
+            shiftLocked={shiftHeld && drawPoints.length > 0 && (activeTool === "length")}
           />
         </div>
 

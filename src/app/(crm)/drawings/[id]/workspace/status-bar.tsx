@@ -17,16 +17,19 @@ export function StatusBar({
   scaleLabel,
   cursor,
   zoomPercent,
+  shiftLocked,
 }: {
   activeTool: ActiveTool;
   drawingMetres: number | null;
   scaleLabel: string;
   cursor: { x: number; y: number } | null;
   zoomPercent: number;
+  shiftLocked?: boolean;
 }) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-x-4 gap-y-1 rounded-b-lg border-t bg-muted/40 px-3 py-1.5 text-xs text-muted-foreground">
       <span className="flex-1">{TOOL_HINTS[activeTool]}</span>
+      {shiftLocked && <span className="font-medium text-brand-plum">0/45/90 lock</span>}
       {drawingMetres != null && <span className="font-medium text-foreground">Drawing: {drawingMetres.toFixed(2)} m</span>}
       <span>Scale {scaleLabel}</span>
       <span>{cursor ? `${Math.round(cursor.x)}, ${Math.round(cursor.y)}` : "--"}</span>
