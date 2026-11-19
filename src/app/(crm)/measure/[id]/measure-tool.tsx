@@ -32,8 +32,17 @@ export function MeasureTool({
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
-  const pdfDocRef = useRef<import("pdfjs-dist").PDFDocumentProxy | null>(null);
 
+  // The loaded document lives in STATE, not just a ref -- a ref write alone
+  // never triggers a re-render, so the render effect below needs a state
+  // value to depend on. (A previous version depended on `numPages` instead,
+  // which is wrong: setNumPages(doc.numPages) is a no-op re-render whenever
+  // a PDF has exactly 1 page, same value as the initial useState(1) -- so
+  // for any single-page plan, the canvas was never drawn at all. This is
+  // the actual cause of the live "blank plan" report, not a worker/CORS
+  // issue -- the worker file serves with a correct content-type in
+  // production; curl confirmed it.)
+  const [pdfDoc, setPdfDoc] = useState<import("pdfjs-dist").PDFDocumentProxy | null>(null);
   const [numPages, setNumPages] = useState(1);
   const [currentPage, setCurrentPage] = useState(1);
   const [renderScale, setRenderScale] = useState(1);
@@ -58,16 +67,25 @@ export function MeasureTool({
   const [labelDraft, setLabelDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
-  // --- Load the PDF document once ---------------------------------------
+  // --- Load the PDF document once -----------------------------------------
+  // Streamed through a same-origin, auth-gated proxy (/api/takeoffs/[id]/file)
+  // rather than fetching the signed Supabase Storage URL directly from the
+  // browser -- this avoids a signed URL ever expiring on a page left open,
+  // sidesteps any cross-origin/range-request quirks fetching Supabase
+  // Storage directly, and gives a real, specific HTTP error (404/500 with a
+  // message) if the stored file is actually missing, instead of pdf.js
+  // trying to fetch a relative path when URL-resolution silently falls back
+  // to the raw storage path.
   useEffect(() => {
     ensurePdfWorkerConfigured();
     let cancelled = false;
+    setPdfError(null);
     (async () => {
       try {
         const pdfjsLib = await import("pdfjs-dist");
-        const doc = await pdfjsLib.getDocument(takeoff.pdfFileUrl).promise;
+        const doc = await pdfjsLib.getDocument({ url: `/api/takeoffs/${takeoff.id}/file`, disableRange: true, disableStream: true }).promise;
         if (cancelled) return;
-        pdfDocRef.current = doc;
+        setPdfDoc(doc);
         setNumPages(doc.numPages);
       } catch (err) {
         if (!cancelled) setPdfError(err instanceof Error ? err.message : "Could not load this PDF.");
@@ -76,27 +94,29 @@ export function MeasureTool({
     return () => {
       cancelled = true;
     };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [takeoff.pdfFileUrl]);
+  }, [takeoff.id]);
 
   // --- Render the current page at the current zoom -----------------------
   const renderPage = useCallback(async () => {
-    const doc = pdfDocRef.current;
     const canvas = canvasRef.current;
-    if (!doc || !canvas) return;
-    const page = await doc.getPage(currentPage);
-    const viewport = page.getViewport({ scale: renderScale });
-    canvas.width = viewport.width;
-    canvas.height = viewport.height;
-    setViewportSize({ width: viewport.width, height: viewport.height });
-    const ctx = canvas.getContext("2d");
-    if (!ctx) return;
-    await page.render({ canvasContext: ctx, viewport }).promise;
-  }, [currentPage, renderScale]);
+    if (!pdfDoc || !canvas) return;
+    try {
+      const page = await pdfDoc.getPage(currentPage);
+      const viewport = page.getViewport({ scale: renderScale });
+      canvas.width = viewport.width;
+      canvas.height = viewport.height;
+      setViewportSize({ width: viewport.width, height: viewport.height });
+      const ctx = canvas.getContext("2d");
+      if (!ctx) return;
+      await page.render({ canvasContext: ctx, viewport }).promise;
+    } catch (err) {
+      setPdfError(err instanceof Error ? err.message : "Could not render this page.");
+    }
+  }, [pdfDoc, currentPage, renderScale]);
 
   useEffect(() => {
     renderPage();
-  }, [renderPage, numPages]);
+  }, [renderPage]);
 
   // --- Keyboard: Escape cancels a draw/calibration, Enter finishes a chain ---
   useEffect(() => {
@@ -491,6 +511,8 @@ export function MeasureTool({
 
         {pdfError ? (
           <p className="text-sm text-destructive">Could not load this plan: {pdfError}</p>
+        ) : !pdfDoc ? (
+          <p className="text-sm text-muted-foreground">Loading plan…</p>
         ) : (
           <div className="max-h-[70vh] overflow-auto rounded-lg border bg-white">
             <div ref={overlayRef} className="relative inline-block" style={{ width: viewportSize.width, height: viewportSize.height }}>
