@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ZoomIn, ZoomOut, ChevronLeft, ChevronRight, Undo2, Eraser, MousePointer2, Link2, ImageDown } from "lucide-react";
+import { Undo2, Eraser, MousePointer2, ImageDown } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -19,6 +19,14 @@ import {
 import { ItemsPanel } from "./items-panel";
 import { ScaleControls } from "./scale-controls";
 import { OutputActions } from "./output-actions";
+import { TopBar } from "./workspace/top-bar";
+import { ToolPalette } from "./workspace/tool-palette";
+import { StatusBar } from "./workspace/status-bar";
+import { WorkspaceTray } from "./workspace/workspace-tray";
+import { MobileWorkspaceBar } from "./workspace/mobile-workspace-bar";
+import { PagesPanel } from "./workspace/pages-panel";
+import { useWorkspaceLayout, type PanelId } from "./workspace/use-workspace-layout";
+import type { ActiveTool } from "./workspace/types";
 
 type CustomerOption = { id: string; name: string; company: string | null };
 
@@ -26,12 +34,25 @@ const ZOOM_STEP = 0.25;
 const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 3;
 
+const PANEL_TITLES: Record<PanelId, string> = {
+  items: "Items & Totals",
+  scale: "Scale",
+  pages: "Pages",
+  search: "Search",
+  selected: "Selected",
+  output: "Output",
+};
+
 export function MeasureTool({
   takeoff, presets, customers, rateCardItems,
 }: { takeoff: TakeoffDetail; presets: ScalePresetItem[]; customers: CustomerOption[]; rateCardItems: RateCardItem[] }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
+  const viewerContainerRef = useRef<HTMLDivElement>(null);
+  const workspace = useWorkspaceLayout();
+  const [fullScreen, setFullScreen] = useState(false);
+  const [drawingName, setDrawingName] = useState(takeoff.name);
 
   // The loaded document lives in STATE, not just a ref -- a ref write alone
   // never triggers a re-render, so the render effect below needs a state
@@ -51,7 +72,8 @@ export function MeasureTool({
 
   const [pointsPerMetre, setPointsPerMetre] = useState(takeoff.pointsPerMetre);
   const [scaleRatioLabel, setScaleRatioLabel] = useState(takeoff.scaleRatioLabel);
-  const [calibrating, setCalibrating] = useState(false);
+  const [activeTool, setActiveTool] = useState<ActiveTool>("select");
+  const calibrating = activeTool === "calibrate";
   const [calibrationPoints, setCalibrationPoints] = useState<Point[]>([]);
   const [calibrationPrompt, setCalibrationPrompt] = useState<{ screenPixels: number } | null>(null);
   const [calibrationMetres, setCalibrationMetres] = useState("");
@@ -59,7 +81,6 @@ export function MeasureTool({
   const [items, setItems] = useState<TakeoffItemDetail[]>(takeoff.items);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(takeoff.items[0]?.id ?? null);
 
-  const [chainModeOn, setChainModeOn] = useState(false);
   const [drawPoints, setDrawPoints] = useState<Point[]>([]);
   const [drawIsChain, setDrawIsChain] = useState(false);
   const [hoverPoint, setHoverPoint] = useState<Point | null>(null);
@@ -118,15 +139,24 @@ export function MeasureTool({
     renderPage();
   }, [renderPage]);
 
-  // --- Keyboard: Escape cancels a draw/calibration, Enter finishes a chain ---
+  // --- Keyboard: Escape cancels a draw/calibration, Enter finishes a chain,
+  // S/L/C/K pick a tool (SketchUp-style single-select tool palette) -------
   useEffect(() => {
     function onKeyDown(e: KeyboardEvent) {
+      const target = e.target as HTMLElement | null;
+      const isTyping = Boolean(target && ["INPUT", "TEXTAREA", "SELECT"].includes(target.tagName));
       if (e.key === "Escape") {
         setDrawPoints([]);
         setCalibrationPoints([]);
-        setCalibrating(false);
+        setActiveTool((t) => (t === "calibrate" ? "select" : t));
       } else if (e.key === "Enter" && drawIsChain && drawPoints.length >= 2) {
         finalizeMeasurement(drawPoints, "CHAIN");
+      } else if (!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const key = e.key.toLowerCase();
+        if (key === "s") setActiveTool("select");
+        else if (key === "l") setActiveTool("length");
+        else if (key === "c") setActiveTool("chain");
+        else if (key === "k") setActiveTool("calibrate");
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -188,7 +218,7 @@ export function MeasureTool({
     } else {
       setMessage(result.message);
     }
-    setCalibrating(false);
+    setActiveTool("select");
     setCalibrationPoints([]);
     setCalibrationPrompt(null);
     setCalibrationMetres("");
@@ -245,16 +275,17 @@ export function MeasureTool({
 
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.detail > 1) return; // double-click is handled separately, below
-    if (calibrating) {
+    if (activeTool === "calibrate") {
       handleCalibrationClick(e);
       return;
     }
+    if (activeTool === "select") return; // nothing to do yet -- panning lands in Step 3
     if (!selectedItemId) {
       setMessage("Select or add an item before measuring.");
       return;
     }
     const p = screenToPoint(e.clientX, e.clientY);
-    const wantsChain = e.ctrlKey || e.metaKey || chainModeOn;
+    const wantsChain = activeTool === "chain";
 
     if (drawPoints.length === 0) {
       setDrawPoints([p]);
@@ -432,70 +463,75 @@ export function MeasureTool({
     setSelectedMeasurement(null);
   }
 
+  async function handleRename(newName: string) {
+    setDrawingName(newName);
+    const result = await updateTakeoffDetailsAction(takeoff.id, { name: newName });
+    if (!result.ok) {
+      setMessage(result.message);
+      setDrawingName(takeoff.name);
+    }
+  }
+
+  /** The page's own (scale=1) size, derived from the last render rather than re-fetched -- viewportSize/renderScale is always that page's size at the CURRENT zoom. */
+  function naturalPageSize(): { width: number; height: number } | null {
+    if (!viewportSize.width || !viewportSize.height || !renderScale) return null;
+    return { width: viewportSize.width / renderScale, height: viewportSize.height / renderScale };
+  }
+
+  function fitPage() {
+    const container = viewerContainerRef.current;
+    const natural = naturalPageSize();
+    if (!container || !natural) return;
+    const scale = Math.min(container.clientWidth / natural.width, container.clientHeight / natural.height);
+    setRenderScale(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, scale)));
+  }
+
+  function fitWidth() {
+    const container = viewerContainerRef.current;
+    const natural = naturalPageSize();
+    if (!container || !natural) return;
+    setRenderScale(Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, container.clientWidth / natural.width)));
+  }
+
   const totalMetres = +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2);
   const grandTotalGbp = +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2);
   const pageMeasurements = items.flatMap((it) => it.measurements.filter((m) => m.pageNumber === currentPage).map((m) => ({ ...m, colour: it.colour, itemId: it.id })));
+  const drawingMetres = drawPoints.length > 0 ? chainLengthPoints(hoverPoint ? [...drawPoints, hoverPoint] : drawPoints) / pointsPerMetre : null;
 
-  return (
-    <div className="grid gap-4 lg:grid-cols-[1fr_320px]">
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2.5">
-          <Button type="button" size="sm" variant="outline" onClick={() => setCurrentPage((p) => Math.max(1, p - 1))} disabled={currentPage <= 1}>
-            <ChevronLeft className="h-3.5 w-3.5" />
-          </Button>
-          <span className="text-xs">Page {currentPage} of {numPages}</span>
-          <Button type="button" size="sm" variant="outline" onClick={() => setCurrentPage((p) => Math.min(numPages, p + 1))} disabled={currentPage >= numPages}>
-            <ChevronRight className="h-3.5 w-3.5" />
-          </Button>
-          <div className="mx-2 h-5 w-px bg-border" />
-          <Button type="button" size="sm" variant="outline" onClick={() => setRenderScale((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2)))}>
-            <ZoomOut className="h-3.5 w-3.5" />
-          </Button>
-          <span className="w-10 text-center text-xs">{Math.round(renderScale * 100)}%</span>
-          <Button type="button" size="sm" variant="outline" onClick={() => setRenderScale((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2)))}>
-            <ZoomIn className="h-3.5 w-3.5" />
-          </Button>
-          <div className="mx-2 h-5 w-px bg-border" />
-          <Button
-            type="button"
-            size="sm"
-            variant={chainModeOn ? "default" : "outline"}
-            onClick={() => setChainModeOn((v) => !v)}
-            title="Tap to add each point without holding Ctrl -- useful on a tablet"
-          >
-            <Link2 className="h-3.5 w-3.5" /> Chain mode
-          </Button>
-          {drawPoints.length > 0 && (
-            <Button type="button" size="sm" variant="outline" onClick={undoLastPoint}>
-              <Undo2 className="h-3.5 w-3.5" /> Undo point
-            </Button>
-          )}
-          <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
-            <Eraser className="h-3.5 w-3.5" /> Clear all
-          </Button>
-          <div className="mx-2 h-5 w-px bg-border" />
-          <Button type="button" size="sm" variant="outline" onClick={savePageAsImage} title="Save this page, as currently shown, as a PNG">
-            <ImageDown className="h-3.5 w-3.5" /> Save page as image
-          </Button>
-        </div>
-
+  const panelContent: Record<PanelId, React.ReactNode> = {
+    items: (
+      <ItemsPanel
+        items={items}
+        rateCardItems={rateCardItems}
+        selectedItemId={selectedItemId}
+        onSelectItem={setSelectedItemId}
+        onCreateItem={handleCreateItem}
+        onUpdateItemRate={handleUpdateItemRate}
+        onDeleteItem={handleDeleteItem}
+        onAddAllFromRateCard={handleAddAllFromRateCard}
+        onSaveItemToRateCard={handleSaveItemToRateCard}
+        totalMetres={totalMetres}
+        grandTotalGbp={grandTotalGbp}
+      />
+    ),
+    scale: (
+      <div className="space-y-2">
         <ScaleControls
           scaleRatioLabel={scaleRatioLabel}
           presets={presets}
           calibrating={calibrating}
           onApplyRatio={handleApplyRatio}
           onStartCalibration={() => {
-            setCalibrating(true);
+            setActiveTool("calibrate");
             setCalibrationPoints([]);
             setDrawPoints([]);
           }}
           onCancelCalibration={() => {
-            setCalibrating(false);
+            setActiveTool("select");
             setCalibrationPoints([]);
           }}
           onSaveCustomPreset={handleSaveCustomPreset}
         />
-
         {calibrationPrompt && (
           <div className="flex flex-wrap items-center gap-2 rounded-lg border border-brand-plum bg-brand-plum-soft p-2.5 text-sm">
             <span>Real length of that line, in metres:</span>
@@ -503,104 +539,28 @@ export function MeasureTool({
             <Button type="button" size="sm" onClick={applyCalibration}>Set scale</Button>
           </div>
         )}
-
-        {message && <p className="text-sm text-destructive">{message}</p>}
-        {!selectedItemId && items.length > 0 && (
-          <p className="flex items-center gap-1.5 text-xs text-amber-600"><MousePointer2 className="h-3.5 w-3.5" /> Select an item in the panel before measuring.</p>
-        )}
-
-        {pdfError ? (
-          <p className="text-sm text-destructive">Could not load this plan: {pdfError}</p>
-        ) : !pdfDoc ? (
-          <p className="text-sm text-muted-foreground">Loading plan…</p>
-        ) : (
-          <div className="max-h-[70vh] overflow-auto rounded-lg border bg-white">
-            <div ref={overlayRef} className="relative inline-block" style={{ width: viewportSize.width, height: viewportSize.height }}>
-              <canvas ref={canvasRef} />
-              <svg
-                ref={svgRef}
-                width={viewportSize.width}
-                height={viewportSize.height}
-                className="absolute inset-0 cursor-crosshair"
-                onClick={handleOverlayClick}
-                onDoubleClick={handleOverlayDoubleClick}
-                onMouseMove={handleOverlayMouseMove}
-              >
-                {pageMeasurements.map((m) => {
-                  const screenPts = m.points.map(pointToScreen);
-                  const isSelected = selectedMeasurement?.measurementId === m.id;
-                  const midpoint = screenPts[Math.floor(screenPts.length / 2)];
-                  return (
-                    <g key={m.id} onClick={(e) => { e.stopPropagation(); selectMeasurement(m.itemId, m.id, m.label); }}>
-                      <polyline
-                        points={screenPts.map((p) => `${p.x},${p.y}`).join(" ")}
-                        fill="none"
-                        stroke={m.colour}
-                        strokeWidth={isSelected ? 4 : 2.5}
-                        strokeDasharray={isSelected ? "6 3" : undefined}
-                      />
-                      {screenPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill={m.colour} />)}
-                      <text x={midpoint.x} y={midpoint.y - 6} fontSize={11} fill={m.colour} fontWeight={600} style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}>
-                        {Number(m.computedMetres)}m{m.label ? ` — ${m.label}` : ""}
-                      </text>
-                    </g>
-                  );
-                })}
-
-                {drawPoints.length > 0 && (() => {
-                  const screenPts = drawPoints.map(pointToScreen);
-                  const previewPts = hoverPoint ? [...screenPts, pointToScreen(hoverPoint)] : screenPts;
-                  const activeItem = items.find((i) => i.id === selectedItemId);
-                  return (
-                    <g>
-                      <polyline points={previewPts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={activeItem?.colour ?? "#3C2263"} strokeWidth={2} strokeDasharray="5 4" />
-                      {screenPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={activeItem?.colour ?? "#3C2263"} />)}
-                    </g>
-                  );
-                })()}
-
-                {calibrationPoints.map((p, i) => {
-                  const sp = pointToScreen(p);
-                  return <circle key={i} cx={sp.x} cy={sp.y} r={4} fill="#B91C1C" />;
-                })}
-                {calibrationPoints.length === 1 && hoverPoint && (
-                  <line x1={pointToScreen(calibrationPoints[0]).x} y1={pointToScreen(calibrationPoints[0]).y} x2={pointToScreen(hoverPoint).x} y2={pointToScreen(hoverPoint).y} stroke="#B91C1C" strokeWidth={2} strokeDasharray="4 4" />
-                )}
-              </svg>
-            </div>
-          </div>
-        )}
-
-        {selectedMeasurement && (
-          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-2.5 text-sm">
-            <span className="text-muted-foreground">Label:</span>
-            <Input value={labelDraft} onChange={(e) => setLabelDraft(e.target.value)} className="h-8 w-56" placeholder="e.g. bathroom 104 perimeter" />
-            <Button type="button" size="sm" onClick={saveLabel}>Save</Button>
-            <Button type="button" size="sm" variant="destructive" onClick={deleteSelectedMeasurement}>Delete</Button>
-            <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedMeasurement(null)}>Close</Button>
-          </div>
-        )}
-
-        <OutputActions takeoffId={takeoff.id} items={items} grandTotalGbp={grandTotalGbp} />
       </div>
-
-      <div className="space-y-3">
-        <ItemsPanel
-          items={items}
-          rateCardItems={rateCardItems}
-          selectedItemId={selectedItemId}
-          onSelectItem={setSelectedItemId}
-          onCreateItem={handleCreateItem}
-          onUpdateItemRate={handleUpdateItemRate}
-          onDeleteItem={handleDeleteItem}
-          onAddAllFromRateCard={handleAddAllFromRateCard}
-          onSaveItemToRateCard={handleSaveItemToRateCard}
-          totalMetres={totalMetres}
-          grandTotalGbp={grandTotalGbp}
-        />
-
-        <div className="space-y-1.5 rounded-lg border bg-card p-3 text-sm">
-          <h2 className="text-sm font-semibold uppercase tracking-wide text-muted-foreground">Company</h2>
+    ),
+    pages: <PagesPanel numPages={numPages} currentPage={currentPage} onJump={setCurrentPage} items={items} />,
+    search: <p className="text-xs text-muted-foreground">Search isn&apos;t available yet -- coming in a later update.</p>,
+    selected: selectedMeasurement ? (
+      <div className="space-y-2 text-sm">
+        <span className="text-xs text-muted-foreground">Label</span>
+        <Input value={labelDraft} onChange={(e) => setLabelDraft(e.target.value)} className="h-8 w-full" placeholder="e.g. bathroom 104 perimeter" />
+        <div className="flex gap-2">
+          <Button type="button" size="sm" onClick={saveLabel}>Save</Button>
+          <Button type="button" size="sm" variant="destructive" onClick={deleteSelectedMeasurement}>Delete</Button>
+          <Button type="button" size="sm" variant="ghost" onClick={() => setSelectedMeasurement(null)}>Close</Button>
+        </div>
+      </div>
+    ) : (
+      <p className="text-xs text-muted-foreground">Click a measurement on the plan to select it.</p>
+    ),
+    output: (
+      <div className="space-y-2">
+        <OutputActions takeoffId={takeoff.id} items={items} grandTotalGbp={grandTotalGbp} />
+        <div className="space-y-1.5 border-t pt-2 text-sm">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-muted-foreground">Company</h3>
           <Select
             value={takeoff.customerId ?? ""}
             onChange={async (e) => {
@@ -613,6 +573,153 @@ export function MeasureTool({
           </Select>
           <p className="text-xs text-muted-foreground">Filed under this company&apos;s Documents once set.</p>
         </div>
+      </div>
+    ),
+  };
+
+  return (
+    <div className={fullScreen ? "fixed inset-0 z-40 flex flex-col gap-2 overflow-auto bg-background p-3" : "flex flex-col gap-2"}>
+      <TopBar
+        name={drawingName}
+        onRename={handleRename}
+        files={[{ id: takeoff.id, name: "Plan" }]}
+        activeFileId={takeoff.id}
+        onSelectFile={() => {}}
+        currentPage={currentPage}
+        numPages={numPages}
+        onPrevPage={() => setCurrentPage((p) => Math.max(1, p - 1))}
+        onNextPage={() => setCurrentPage((p) => Math.min(numPages, p + 1))}
+        zoomPercent={renderScale * 100}
+        onZoomIn={() => setRenderScale((z) => Math.min(MAX_ZOOM, +(z + ZOOM_STEP).toFixed(2)))}
+        onZoomOut={() => setRenderScale((z) => Math.max(MIN_ZOOM, +(z - ZOOM_STEP).toFixed(2)))}
+        onFitPage={fitPage}
+        onFitWidth={fitWidth}
+        fullScreen={fullScreen}
+        onToggleFullScreen={() => setFullScreen((v) => !v)}
+      />
+
+      <div className="flex flex-1 gap-2 overflow-hidden pb-14 lg:pb-0">
+        <div className="hidden lg:block">
+          <ToolPalette activeTool={activeTool} onSelectTool={setActiveTool} />
+        </div>
+
+        <div className="flex min-w-0 flex-1 flex-col gap-2">
+          {message && <p className="text-sm text-destructive">{message}</p>}
+          {activeTool !== "select" && !selectedItemId && items.length > 0 && (
+            <p className="flex items-center gap-1.5 text-xs text-amber-600"><MousePointer2 className="h-3.5 w-3.5" /> Select an item in the Items &amp; Totals panel before measuring.</p>
+          )}
+
+          <div className="flex flex-wrap items-center gap-2 rounded-lg border bg-muted/30 p-1.5">
+            {drawPoints.length > 0 && (
+              <Button type="button" size="sm" variant="outline" onClick={undoLastPoint}>
+                <Undo2 className="h-3.5 w-3.5" /> Undo point
+              </Button>
+            )}
+            <Button type="button" size="sm" variant="ghost" onClick={clearAll}>
+              <Eraser className="h-3.5 w-3.5" /> Clear all
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={savePageAsImage} title="Save this page, as currently shown, as a PNG">
+              <ImageDown className="h-3.5 w-3.5" /> Save page as image
+            </Button>
+          </div>
+
+          {pdfError ? (
+            <p className="text-sm text-destructive">Could not load this plan: {pdfError}</p>
+          ) : !pdfDoc ? (
+            <p className="text-sm text-muted-foreground">Loading plan…</p>
+          ) : (
+            <div ref={viewerContainerRef} className="flex-1 overflow-auto rounded-lg border bg-white">
+              <div ref={overlayRef} className="relative inline-block" style={{ width: viewportSize.width, height: viewportSize.height }}>
+                <canvas ref={canvasRef} />
+                <svg
+                  ref={svgRef}
+                  width={viewportSize.width}
+                  height={viewportSize.height}
+                  className="absolute inset-0 cursor-crosshair"
+                  onClick={handleOverlayClick}
+                  onDoubleClick={handleOverlayDoubleClick}
+                  onMouseMove={handleOverlayMouseMove}
+                >
+                  {pageMeasurements.map((m) => {
+                    const screenPts = m.points.map(pointToScreen);
+                    const isSelected = selectedMeasurement?.measurementId === m.id;
+                    const midpoint = screenPts[Math.floor(screenPts.length / 2)];
+                    return (
+                      <g key={m.id} onClick={(e) => { e.stopPropagation(); selectMeasurement(m.itemId, m.id, m.label); }}>
+                        <polyline
+                          points={screenPts.map((p) => `${p.x},${p.y}`).join(" ")}
+                          fill="none"
+                          stroke={m.colour}
+                          strokeWidth={isSelected ? 4 : 2.5}
+                          strokeDasharray={isSelected ? "6 3" : undefined}
+                        />
+                        {screenPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3} fill={m.colour} />)}
+                        <text x={midpoint.x} y={midpoint.y - 6} fontSize={11} fill={m.colour} fontWeight={600} style={{ paintOrder: "stroke", stroke: "#fff", strokeWidth: 3 }}>
+                          {Number(m.computedMetres)}m{m.label ? ` — ${m.label}` : ""}
+                        </text>
+                      </g>
+                    );
+                  })}
+
+                  {drawPoints.length > 0 && (() => {
+                    const screenPts = drawPoints.map(pointToScreen);
+                    const previewPts = hoverPoint ? [...screenPts, pointToScreen(hoverPoint)] : screenPts;
+                    const activeItem = items.find((i) => i.id === selectedItemId);
+                    return (
+                      <g>
+                        <polyline points={previewPts.map((p) => `${p.x},${p.y}`).join(" ")} fill="none" stroke={activeItem?.colour ?? "#3C2263"} strokeWidth={2} strokeDasharray="5 4" />
+                        {screenPts.map((p, i) => <circle key={i} cx={p.x} cy={p.y} r={3.5} fill={activeItem?.colour ?? "#3C2263"} />)}
+                      </g>
+                    );
+                  })()}
+
+                  {calibrationPoints.map((p, i) => {
+                    const sp = pointToScreen(p);
+                    return <circle key={i} cx={sp.x} cy={sp.y} r={4} fill="#B91C1C" />;
+                  })}
+                  {calibrationPoints.length === 1 && hoverPoint && (
+                    <line x1={pointToScreen(calibrationPoints[0]).x} y1={pointToScreen(calibrationPoints[0]).y} x2={pointToScreen(hoverPoint).x} y2={pointToScreen(hoverPoint).y} stroke="#B91C1C" strokeWidth={2} strokeDasharray="4 4" />
+                  )}
+                </svg>
+              </div>
+            </div>
+          )}
+
+          <StatusBar
+            activeTool={activeTool}
+            drawingMetres={drawingMetres}
+            scaleLabel={scaleRatioLabel ?? "Calibrated"}
+            cursor={hoverPoint}
+            zoomPercent={renderScale * 100}
+          />
+        </div>
+
+        <div className="hidden lg:flex">
+          <WorkspaceTray
+            layout={workspace.layout}
+            onToggleCollapsed={workspace.toggleCollapsed}
+            onPopOut={(id) => workspace.setFloating(id, true)}
+            onDock={(id) => workspace.setFloating(id, false)}
+            onMove={workspace.moveFloating}
+            onReorder={workspace.reorder}
+            onToggleTrayCollapsed={() => workspace.setTrayCollapsed(!workspace.layout.trayCollapsed)}
+            onResizeTray={workspace.setTrayWidth}
+            onResetLayout={workspace.reset}
+            panelTitles={PANEL_TITLES}
+            panelContent={panelContent}
+          />
+        </div>
+      </div>
+
+      <div className="lg:hidden">
+        <MobileWorkspaceBar
+          activeTool={activeTool}
+          onSelectTool={setActiveTool}
+          layout={workspace.layout}
+          onToggleCollapsed={workspace.toggleCollapsed}
+          panelTitles={PANEL_TITLES}
+          panelContent={panelContent}
+        />
       </div>
     </div>
   );
