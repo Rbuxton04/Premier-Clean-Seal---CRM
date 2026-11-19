@@ -5,6 +5,10 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { listTakeoffs, type TakeoffListItem } from "@/services/takeoff.service";
+import { getMaterialDefaults } from "@/services/takeoff-material-defaults.service";
+import { getCurrentUser } from "@/lib/auth";
+import { hasAnyRole } from "@/lib/permissions";
+import { MaterialDefaultsSection } from "./material-defaults-section";
 
 export const dynamic = "force-dynamic";
 
@@ -18,6 +22,9 @@ async function loadTakeoffs(): Promise<{ takeoffs: TakeoffListItem[]; dbOnline: 
 
 export default async function DrawingsPage() {
   const { takeoffs, dbOnline } = await loadTakeoffs();
+  const user = await getCurrentUser();
+  const canManageMaterials = hasAnyRole(user, ["ADMIN", "OFFICE"]);
+  const materialDefaults = dbOnline ? await getMaterialDefaults() : { jointWidthMm: 15, jointDepthMm: 10, tubeMl: 310, wastePercent: 10 };
 
   return (
     <div className="space-y-4">
@@ -38,6 +45,8 @@ export default async function DrawingsPage() {
           </Button>
         </div>
       </div>
+
+      <MaterialDefaultsSection defaults={materialDefaults} canManage={canManageMaterials} />
 
       {!dbOnline && (
         <Badge variant="warning">

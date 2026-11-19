@@ -2,14 +2,16 @@
 
 import { useState } from "react";
 import Link from "next/link";
-import { Plus, Trash2, Check, ListOrdered, BookmarkPlus, Layers } from "lucide-react";
+import { Plus, Trash2, Check, ListOrdered, BookmarkPlus, Layers, Settings2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
 import { formatGBP, cn } from "@/lib/utils";
-import { takeoffItemColourPalette, DEFAULT_ITEM_RATE_PER_METRE_GBP } from "@/validators/takeoff";
+import { takeoffItemColourPalette, DEFAULT_ITEM_RATE_PER_METRE_GBP, type MaterialDefaultsValues } from "@/validators/takeoff";
 import type { TakeoffItemDetail } from "@/services/takeoff.service";
 import type { RateCardItem } from "@/services/takeoff-rate-card.service";
+
+export type ItemOverrides = { overrideJointWidthMm: number | null; overrideJointDepthMm: number | null; overrideWastePercent: number | null };
 
 export type ItemsPanelProps = {
   items: TakeoffItemDetail[];
@@ -21,14 +23,17 @@ export type ItemsPanelProps = {
   onDeleteItem: (id: string) => Promise<void>;
   onAddAllFromRateCard: () => Promise<void>;
   onSaveItemToRateCard: (item: TakeoffItemDetail) => Promise<void>;
+  onUpdateItemOverrides: (id: string, overrides: ItemOverrides) => Promise<void>;
+  materialDefaults: MaterialDefaultsValues;
   totalMetres: number;
   grandTotalGbp: number;
 };
 
 export function ItemsPanel({
   items, rateCardItems, selectedItemId, onSelectItem, onCreateItem, onUpdateItemRate, onDeleteItem,
-  onAddAllFromRateCard, onSaveItemToRateCard, totalMetres, grandTotalGbp,
+  onAddAllFromRateCard, onSaveItemToRateCard, onUpdateItemOverrides, materialDefaults, totalMetres, grandTotalGbp,
 }: ItemsPanelProps) {
+  const [expandedMaterialsId, setExpandedMaterialsId] = useState<string | null>(null);
   const [adding, setAdding] = useState(false);
   const [source, setSource] = useState<"rateCard" | "custom">(rateCardItems.length > 0 ? "rateCard" : "custom");
   const [pickedPresetId, setPickedPresetId] = useState(rateCardItems[0]?.id ?? "");
@@ -183,13 +188,27 @@ export function ItemsPanel({
                 <RateInput value={Number(item.pricePerMetre)} onCommit={(v) => onUpdateItemRate(item.id, v)} />
                 <span>{item.kind === "COUNT" ? "/item =" : "/m ="}</span>
                 <span className="font-medium text-foreground">{formatGBP(item.lineTotalGbp)}</span>
-                <button type="button" onClick={() => handleSaveToRateCard(item)} className="ml-auto text-muted-foreground hover:text-brand-plum" aria-label={`Save ${item.name} to rate card`} title="Save to rate card">
+                {item.kind === "LENGTH" && (
+                  <button
+                    type="button"
+                    onClick={() => setExpandedMaterialsId((cur) => (cur === item.id ? null : item.id))}
+                    className="ml-auto text-muted-foreground hover:text-foreground"
+                    aria-label={`Materials settings for ${item.name}`}
+                    title="Worst-case materials settings"
+                  >
+                    <Settings2 className="h-3.5 w-3.5" />
+                  </button>
+                )}
+                <button type="button" onClick={() => handleSaveToRateCard(item)} className={cn("text-muted-foreground hover:text-brand-plum", item.kind !== "LENGTH" && "ml-auto")} aria-label={`Save ${item.name} to rate card`} title="Save to rate card">
                   <BookmarkPlus className="h-3.5 w-3.5" />
                 </button>
                 <button type="button" onClick={() => onDeleteItem(item.id)} className="text-muted-foreground hover:text-destructive" aria-label={`Delete ${item.name}`}>
                   <Trash2 className="h-3.5 w-3.5" />
                 </button>
               </div>
+              {item.kind === "LENGTH" && expandedMaterialsId === item.id && (
+                <MaterialsOverrideRow item={item} defaults={materialDefaults} onSave={(overrides) => onUpdateItemOverrides(item.id, overrides)} />
+              )}
             </li>
           ))}
         </ul>
@@ -198,6 +217,41 @@ export function ItemsPanel({
       <div className="flex items-center justify-between border-t pt-2 text-sm">
         <span className="font-medium">Total: {totalMetres} m</span>
         <span className="font-display text-base font-semibold text-brand-plum">{formatGBP(grandTotalGbp)}</span>
+      </div>
+    </div>
+  );
+}
+
+/** Per-item worst-case materials override (Drawings Part 2, section 6) -- LENGTH items only. Blank means "use the organisation default" for that figure. */
+function MaterialsOverrideRow({ item, defaults, onSave }: { item: TakeoffItemDetail; defaults: MaterialDefaultsValues; onSave: (overrides: ItemOverrides) => void }) {
+  const [width, setWidth] = useState(item.overrideJointWidthMm != null ? String(item.overrideJointWidthMm) : "");
+  const [depth, setDepth] = useState(item.overrideJointDepthMm != null ? String(item.overrideJointDepthMm) : "");
+  const [waste, setWaste] = useState(item.overrideWastePercent != null ? String(item.overrideWastePercent) : "");
+
+  function commit() {
+    onSave({
+      overrideJointWidthMm: width.trim() ? Number(width) : null,
+      overrideJointDepthMm: depth.trim() ? Number(depth) : null,
+      overrideWastePercent: waste.trim() ? Number(waste) : null,
+    });
+  }
+
+  return (
+    <div className="ml-5 mt-1 space-y-1.5 rounded-md border bg-muted/30 p-2 text-xs">
+      <p className="text-muted-foreground">Worst-case materials override -- blank uses the organisation default.</p>
+      <div className="grid grid-cols-3 gap-2">
+        <label className="space-y-0.5">
+          <span className="text-muted-foreground">Width (mm)</span>
+          <Input type="number" min="1" placeholder={String(defaults.jointWidthMm)} value={width} onChange={(e) => setWidth(e.target.value)} onBlur={commit} className="h-7 text-xs" />
+        </label>
+        <label className="space-y-0.5">
+          <span className="text-muted-foreground">Depth (mm)</span>
+          <Input type="number" min="1" placeholder={String(defaults.jointDepthMm)} value={depth} onChange={(e) => setDepth(e.target.value)} onBlur={commit} className="h-7 text-xs" />
+        </label>
+        <label className="space-y-0.5">
+          <span className="text-muted-foreground">Waste %</span>
+          <Input type="number" min="0" placeholder={String(defaults.wastePercent)} value={waste} onChange={(e) => setWaste(e.target.value)} onBlur={commit} className="h-7 text-xs" />
+        </label>
       </div>
     </div>
   );

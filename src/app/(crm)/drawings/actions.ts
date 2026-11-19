@@ -3,14 +3,16 @@
 import { revalidatePath } from "next/cache";
 import {
   takeoffCreateSchema, takeoffItemSchema, takeoffMeasurementSchema, takeoffScaleSchema, scalePresetSchema, takeoffItemPresetSchema,
-  takeoffFileCreateSchema, takeoffFileRenameSchema, takeoffNoteCreateSchema, takeoffNoteUpdateSchema,
+  takeoffFileCreateSchema, takeoffFileRenameSchema, takeoffNoteCreateSchema, takeoffNoteUpdateSchema, materialDefaultsSchema,
   type TakeoffCreateInput, type TakeoffItemInput, type TakeoffMeasurementInput, type TakeoffScaleInput, type ScalePresetInput, type TakeoffItemPresetInput,
-  type TakeoffFileCreateInput, type TakeoffFileRenameInput, type TakeoffNoteCreateInput, type TakeoffNoteUpdateInput,
+  type TakeoffFileCreateInput, type TakeoffFileRenameInput, type TakeoffNoteCreateInput, type TakeoffNoteUpdateInput, type MaterialDefaultsInput,
 } from "@/validators/takeoff";
 import * as TakeoffService from "@/services/takeoff.service";
 import * as ScalePresetService from "@/services/scale-preset.service";
 import * as RateCardService from "@/services/takeoff-rate-card.service";
-import { requirePermission, requireAdmin, ForbiddenError } from "@/lib/permissions";
+import * as MaterialDefaultsService from "@/services/takeoff-material-defaults.service";
+import { requirePermission, requireAdmin, hasAnyRole, ForbiddenError } from "@/lib/permissions";
+import { getCurrentUser } from "@/lib/auth";
 import { actorContext, writeAudit } from "@/lib/audit";
 import type { RecordActionResult } from "@/components/record-action-button";
 
@@ -391,6 +393,23 @@ export async function restoreTakeoffNoteAction(takeoffId: string, noteId: string
     await requirePermission("takeoffs", "update");
     await TakeoffService.restoreTakeoffNote(noteId);
     revalidatePath(`/drawings/${takeoffId}`);
+    return { ok: true, data: undefined };
+  } catch (err) {
+    return fail(err);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Worst-case materials defaults (Drawings Part 2, section 6) -- Admin/Office only
+// ---------------------------------------------------------------------------
+
+export async function updateMaterialDefaultsAction(input: MaterialDefaultsInput): Promise<ActionResult> {
+  try {
+    const user = await getCurrentUser();
+    if (!user || !hasAnyRole(user, ["ADMIN", "OFFICE"])) throw new ForbiddenError("Only Admin and Office can change the materials defaults.");
+    const parsed = materialDefaultsSchema.parse(input);
+    await MaterialDefaultsService.upsertMaterialDefaults(parsed);
+    revalidatePath("/drawings");
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);

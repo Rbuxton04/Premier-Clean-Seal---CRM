@@ -245,6 +245,14 @@ export type TakeoffItemPresetInput = z.infer<typeof takeoffItemPresetSchema>;
 
 export const ALLOWED_TUBE_ML = [310, 400, 600] as const;
 
+export const materialDefaultsSchema = z.object({
+  jointWidthMm: z.coerce.number().int().positive(),
+  jointDepthMm: z.coerce.number().int().positive(),
+  tubeMl: z.coerce.number().refine((v) => (ALLOWED_TUBE_ML as readonly number[]).includes(v), { message: "Tube size must be 310, 400 or 600ml" }),
+  wastePercent: z.coerce.number().min(0),
+});
+export type MaterialDefaultsInput = z.infer<typeof materialDefaultsSchema>;
+
 export type MaterialDefaultsValues = { jointWidthMm: number; jointDepthMm: number; tubeMl: number; wastePercent: number };
 export type MaterialItemOverride = { jointWidthMm?: number | null; jointDepthMm?: number | null; wastePercent?: number | null };
 

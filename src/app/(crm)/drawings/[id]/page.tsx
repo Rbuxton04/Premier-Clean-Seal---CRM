@@ -5,6 +5,7 @@ import { getTakeoff } from "@/services/takeoff.service";
 import { listScalePresets } from "@/services/scale-preset.service";
 import { listCustomers } from "@/services/customer.service";
 import { listRateCardItems } from "@/services/takeoff-rate-card.service";
+import { getMaterialDefaults } from "@/services/takeoff-material-defaults.service";
 import { DeleteTakeoffButton } from "./delete-takeoff-button";
 import { MeasureTool } from "./measure-tool";
 
@@ -14,7 +15,9 @@ export default async function TakeoffPage({ params }: { params: { id: string } }
   const takeoff = await getTakeoff(params.id);
   if (!takeoff) notFound();
 
-  const [presets, customers, rateCardItems] = await Promise.all([listScalePresets(), listCustomers(), listRateCardItems()]);
+  const [presets, customers, rateCardItems, materialDefaults] = await Promise.all([
+    listScalePresets(), listCustomers(), listRateCardItems(), getMaterialDefaults(),
+  ]);
 
   return (
     <div className="space-y-4">
@@ -32,6 +35,7 @@ export default async function TakeoffPage({ params }: { params: { id: string } }
         presets={presets}
         customers={customers.map((c) => ({ id: c.id, name: c.name, company: c.company }))}
         rateCardItems={rateCardItems}
+        materialDefaults={materialDefaults}
       />
     </div>
   );

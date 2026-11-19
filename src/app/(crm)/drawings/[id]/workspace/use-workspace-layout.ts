@@ -9,7 +9,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 // disabled storage) or simply not exist (SSR's first render), and this must
 // never crash the workspace over a convenience feature.
 
-export type PanelId = "items" | "scale" | "pages" | "search" | "selected" | "output";
+export type PanelId = "items" | "scale" | "pages" | "search" | "selected" | "output" | "materials";
 
 export type PanelState = {
   collapsed: boolean;
@@ -27,7 +27,7 @@ export type WorkspaceLayout = {
 
 const STORAGE_KEY = "drawings-workspace-layout-v1";
 
-const DEFAULT_PANEL_ORDER: PanelId[] = ["items", "scale", "pages", "search", "selected", "output"];
+const DEFAULT_PANEL_ORDER: PanelId[] = ["items", "scale", "pages", "search", "selected", "materials", "output"];
 
 function defaultPanelState(): PanelState {
   return { collapsed: false, floating: false, floatX: 80, floatY: 80 };
@@ -55,14 +55,15 @@ function loadLayout(): WorkspaceLayout {
     if (!raw) return defaultLayout();
     const parsed = JSON.parse(raw);
     if (!isPlausibleLayout(parsed)) return defaultLayout();
-    // Merge onto defaults so a panel introduced in a later release (not in
-    // an older stored layout) still gets a sane starting state instead of
-    // being undefined.
+    // Merge onto defaults so a panel introduced in a later release -- not
+    // in an older stored layout's panelOrder at all -- still gets a sane
+    // starting state AND actually appears (appended at the end) instead of
+    // silently vanishing from the tray until the user hits Reset layout.
     const base = defaultLayout();
+    const known = parsed.panelOrder.filter((id: unknown): id is PanelId => DEFAULT_PANEL_ORDER.includes(id as PanelId));
+    const missing = DEFAULT_PANEL_ORDER.filter((id) => !known.includes(id));
     return {
-      panelOrder: parsed.panelOrder.filter((id): id is PanelId => DEFAULT_PANEL_ORDER.includes(id as PanelId)).length
-        ? parsed.panelOrder.filter((id): id is PanelId => DEFAULT_PANEL_ORDER.includes(id as PanelId))
-        : base.panelOrder,
+      panelOrder: known.length ? [...known, ...missing] : base.panelOrder,
       panels: { ...base.panels, ...parsed.panels },
       trayCollapsed: parsed.trayCollapsed,
       trayWidth: parsed.trayWidth,

@@ -9,7 +9,7 @@ import { ensurePdfWorkerConfigured } from "../pdf-worker-setup";
 import type { TakeoffDetail, TakeoffItemDetail } from "@/services/takeoff.service";
 import type { ScalePresetItem } from "@/services/scale-preset.service";
 import type { RateCardItem } from "@/services/takeoff-rate-card.service";
-import { chainLengthPoints, resolvePointsPerMetre, computeMeasurementMetres, type Point } from "@/validators/takeoff";
+import { chainLengthPoints, resolvePointsPerMetre, computeMeasurementMetres, type Point, type MaterialDefaultsValues } from "@/validators/takeoff";
 import {
   createMeasurementAction, updateMeasurementLabelAction, deleteMeasurementAction, clearAllMeasurementsAction,
   createTakeoffItemAction, updateTakeoffItemAction, deleteTakeoffItemAction,
@@ -28,6 +28,7 @@ import { WorkspaceTray } from "./workspace/workspace-tray";
 import { MobileWorkspaceBar } from "./workspace/mobile-workspace-bar";
 import { PagesPanel } from "./workspace/pages-panel";
 import { SearchPanel, type SearchResult } from "./workspace/search-panel";
+import { MaterialsPanel } from "./workspace/materials-panel";
 import { useWorkspaceLayout, type PanelId } from "./workspace/use-workspace-layout";
 import type { ActiveTool } from "./workspace/types";
 
@@ -43,12 +44,16 @@ const PANEL_TITLES: Record<PanelId, string> = {
   pages: "Pages",
   search: "Search",
   selected: "Selected",
+  materials: "Materials",
   output: "Output",
 };
 
 export function MeasureTool({
-  takeoff, presets, customers, rateCardItems,
-}: { takeoff: TakeoffDetail; presets: ScalePresetItem[]; customers: CustomerOption[]; rateCardItems: RateCardItem[] }) {
+  takeoff, presets, customers, rateCardItems, materialDefaults,
+}: {
+  takeoff: TakeoffDetail; presets: ScalePresetItem[]; customers: CustomerOption[]; rateCardItems: RateCardItem[];
+  materialDefaults: MaterialDefaultsValues;
+}) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const overlayRef = useRef<HTMLDivElement>(null);
   const svgRef = useRef<SVGSVGElement>(null);
@@ -667,6 +672,17 @@ export function MeasureTool({
     }
   }
 
+  /** Worst-case materials per-item override (Drawings Part 2, section 6) -- LENGTH items only; null means "use the organisation default". */
+  async function handleUpdateItemOverrides(id: string, overrides: { overrideJointWidthMm: number | null; overrideJointDepthMm: number | null; overrideWastePercent: number | null }) {
+    const item = items.find((i) => i.id === id);
+    if (!item) return;
+    const result = await updateTakeoffItemAction(takeoff.id, id, {
+      name: item.name, colour: item.colour, kind: item.kind, pricePerMetre: Number(item.pricePerMetre), sortOrder: item.sortOrder,
+      ...overrides,
+    });
+    if (result.ok) setItems((cur) => cur.map((it) => (it.id === id ? { ...it, ...overrides } : it)));
+  }
+
   async function handleAddAllFromRateCard() {
     const result = await addAllFromRateCardAction(takeoff.id);
     if (!result.ok) {
@@ -1066,6 +1082,8 @@ export function MeasureTool({
         onDeleteItem={handleDeleteItem}
         onAddAllFromRateCard={handleAddAllFromRateCard}
         onSaveItemToRateCard={handleSaveItemToRateCard}
+        onUpdateItemOverrides={handleUpdateItemOverrides}
+        materialDefaults={materialDefaults}
         totalMetres={totalMetres}
         grandTotalGbp={grandTotalGbp}
       />
@@ -1144,6 +1162,7 @@ export function MeasureTool({
     ) : (
       <p className="text-xs text-muted-foreground">Click a measurement, count marker or note on the plan to select it.</p>
     ),
+    materials: <MaterialsPanel items={items} defaults={materialDefaults} />,
     output: (
       <div className="space-y-2">
         <OutputActions takeoffId={takeoff.id} items={items} grandTotalGbp={grandTotalGbp} />
