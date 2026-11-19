@@ -51,14 +51,21 @@ export function QuoteActions({
           </a>
         </Button>
         <Button type="button" size="sm" variant="outline" asChild>
-          <Link href={`/measure/new?customerId=${customerId}&quoteId=${quoteId}`}>
-            <Ruler className="h-3.5 w-3.5" /> Measure a plan
+          <Link href={`/drawings/new?customerId=${customerId}&quoteId=${quoteId}`}>
+            <Ruler className="h-3.5 w-3.5" /> New drawing
           </Link>
         </Button>
         {linkedTakeoffs.map((t) => (
           <Button key={t.id} type="button" size="sm" variant="outline" asChild>
+            <Link href={`/drawings/${t.id}`}>
+              <Ruler className="h-3.5 w-3.5" /> Open in Drawings ({t.name})
+            </Link>
+          </Button>
+        ))}
+        {linkedTakeoffs.map((t) => (
+          <Button key={`${t.id}-export`} type="button" size="sm" variant="outline" asChild>
             <a href={`/api/takeoffs/${t.id}/export`}>
-              <Ruler className="h-3.5 w-3.5" /> Download marked-up plan ({t.name})
+              Download marked-up plan ({t.name})
             </a>
           </Button>
         ))}

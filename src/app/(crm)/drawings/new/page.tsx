@@ -16,7 +16,7 @@ export default async function NewTakeoffPage({
   return (
     <div className="max-w-2xl space-y-4">
       <div>
-        <h1 className="font-display text-2xl font-semibold tracking-tight">New takeoff</h1>
+        <h1 className="font-display text-2xl font-semibold tracking-tight">New drawing</h1>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
       </div>
       <NewTakeoffForm

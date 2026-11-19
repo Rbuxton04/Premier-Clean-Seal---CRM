@@ -53,7 +53,7 @@ export async function createQuoteAction(_prev: QuoteFormState, formData: FormDat
   const takeoffId = formData.get("takeoffId");
   if (takeoffId) {
     await linkTakeoffToQuote(String(takeoffId), quote.id, parsed.data.customerId);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
   }
 
   revalidatePath("/quotes");

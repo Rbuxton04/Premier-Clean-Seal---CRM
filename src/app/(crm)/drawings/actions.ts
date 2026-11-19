@@ -26,7 +26,7 @@ export async function createTakeoffAction(input: TakeoffCreateInput): Promise<Ac
     const takeoff = await TakeoffService.createTakeoff(parsed);
     const { userId, ip } = await actorContext();
     await writeAudit({ userId, action: "CREATE", resource: "takeoff", resourceId: takeoff.id, after: { name: parsed.name }, ip });
-    revalidatePath("/measure");
+    revalidatePath("/drawings");
     return { ok: true, data: takeoff };
   } catch (err) {
     return fail(err);
@@ -38,7 +38,7 @@ export async function updateTakeoffScaleAction(takeoffId: string, scale: Takeoff
     await requirePermission("takeoffs", "update");
     const parsed = takeoffScaleSchema.parse(scale);
     await TakeoffService.updateTakeoffScale(takeoffId, parsed);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -52,8 +52,8 @@ export async function updateTakeoffDetailsAction(
   try {
     await requirePermission("takeoffs", "update");
     await TakeoffService.updateTakeoffDetails(takeoffId, data);
-    revalidatePath(`/measure/${takeoffId}`);
-    revalidatePath("/measure");
+    revalidatePath(`/drawings/${takeoffId}`);
+    revalidatePath("/drawings");
     revalidatePath("/documents");
     return { ok: true, data: undefined };
   } catch (err) {
@@ -68,7 +68,7 @@ export async function deleteTakeoffAction(id: string): Promise<RecordActionResul
     await TakeoffService.softDeleteTakeoff(id, actor.id);
     const { userId, ip } = await actorContext();
     await writeAudit({ userId, action: "DELETE", resource: "takeoff", resourceId: id, ip });
-    revalidatePath("/measure");
+    revalidatePath("/drawings");
     revalidatePath("/documents");
     return { ok: true, message: "Deleted" };
   } catch (err) {
@@ -86,7 +86,7 @@ export async function createTakeoffItemAction(takeoffId: string, input: TakeoffI
     await requirePermission("takeoffs", "update");
     const parsed = takeoffItemSchema.parse(input);
     const item = await TakeoffService.createTakeoffItem(takeoffId, parsed);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: item };
   } catch (err) {
     return fail(err);
@@ -98,7 +98,7 @@ export async function updateTakeoffItemAction(takeoffId: string, itemId: string,
     await requirePermission("takeoffs", "update");
     const parsed = takeoffItemSchema.parse(input);
     await TakeoffService.updateTakeoffItem(itemId, parsed);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -109,7 +109,7 @@ export async function deleteTakeoffItemAction(takeoffId: string, itemId: string)
   try {
     await requirePermission("takeoffs", "update");
     await TakeoffService.deleteTakeoffItem(itemId);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -129,7 +129,7 @@ export async function createMeasurementAction(
     await requirePermission("takeoffs", "update");
     const parsed = takeoffMeasurementSchema.parse(input);
     const result = await TakeoffService.createMeasurement(parsed, pointsPerMetre);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: result };
   } catch (err) {
     return fail(err);
@@ -140,7 +140,7 @@ export async function updateMeasurementLabelAction(takeoffId: string, measuremen
   try {
     await requirePermission("takeoffs", "update");
     await TakeoffService.updateMeasurementLabel(measurementId, label || null);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -151,7 +151,7 @@ export async function deleteMeasurementAction(takeoffId: string, measurementId: 
   try {
     await requirePermission("takeoffs", "update");
     await TakeoffService.deleteMeasurement(measurementId);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -162,7 +162,7 @@ export async function clearAllMeasurementsAction(takeoffId: string): Promise<Act
   try {
     await requirePermission("takeoffs", "update");
     await TakeoffService.clearAllMeasurements(takeoffId);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -178,7 +178,7 @@ export async function createScalePresetAction(input: ScalePresetInput): Promise<
     await requirePermission("takeoffs", "update");
     const parsed = scalePresetSchema.parse(input);
     const preset = await ScalePresetService.createScalePreset(parsed);
-    revalidatePath("/measure");
+    revalidatePath("/drawings");
     return { ok: true, data: preset };
   } catch (err) {
     return fail(err);
@@ -189,7 +189,7 @@ export async function deleteScalePresetAction(id: string): Promise<ActionResult>
   try {
     await requirePermission("takeoffs", "update");
     await ScalePresetService.deleteScalePreset(id);
-    revalidatePath("/measure");
+    revalidatePath("/drawings");
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -205,7 +205,7 @@ export async function createRateCardItemAction(input: TakeoffItemPresetInput): P
     await requirePermission("takeoffRateCard", "create");
     const parsed = takeoffItemPresetSchema.parse(input);
     const item = await RateCardService.createRateCardItem(parsed);
-    revalidatePath("/measure/rate-card");
+    revalidatePath("/drawings/rate-card");
     return { ok: true, data: item };
   } catch (err) {
     return fail(err);
@@ -217,7 +217,7 @@ export async function updateRateCardItemAction(id: string, input: TakeoffItemPre
     await requirePermission("takeoffRateCard", "update");
     const parsed = takeoffItemPresetSchema.parse(input);
     await RateCardService.updateRateCardItem(id, parsed);
-    revalidatePath("/measure/rate-card");
+    revalidatePath("/drawings/rate-card");
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -228,7 +228,7 @@ export async function moveRateCardItemAction(id: string, direction: "up" | "down
   try {
     await requirePermission("takeoffRateCard", "update");
     await RateCardService.moveRateCardItem(id, direction);
-    revalidatePath("/measure/rate-card");
+    revalidatePath("/drawings/rate-card");
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -239,7 +239,7 @@ export async function deleteRateCardItemAction(id: string): Promise<ActionResult
   try {
     const actor = await requirePermission("takeoffRateCard", "delete");
     await RateCardService.softDeleteRateCardItem(id, actor.id);
-    revalidatePath("/measure/rate-card");
+    revalidatePath("/drawings/rate-card");
     return { ok: true, data: undefined };
   } catch (err) {
     return fail(err);
@@ -265,7 +265,7 @@ export async function addAllFromRateCardAction(
     const takeoff = await TakeoffService.getTakeoff(takeoffId);
     if (!takeoff) return { ok: false, message: "Takeoff not found." };
     const added = await RateCardService.addAllRateCardItemsToTakeoff(takeoffId, takeoff.items);
-    revalidatePath(`/measure/${takeoffId}`);
+    revalidatePath(`/drawings/${takeoffId}`);
     return { ok: true, data: added };
   } catch (err) {
     return fail(err);
@@ -277,7 +277,7 @@ export async function saveItemAsPresetAction(name: string, colour: string, price
   try {
     await requirePermission("takeoffRateCard", "create");
     const result = await RateCardService.upsertRateCardItemByName(name, colour, pricePerMetre);
-    revalidatePath("/measure/rate-card");
+    revalidatePath("/drawings/rate-card");
     return { ok: true, data: { created: result.created } };
   } catch (err) {
     return fail(err);

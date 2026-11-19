@@ -228,13 +228,18 @@ export default async function JobDetailPage({ params }: { params: { id: string }
               <Link href={`/documents?jobId=${job.id}`} className="inline-flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
                 <FolderOpen className="h-4 w-4" /> View documents &amp; certificates
               </Link>
-              <Link href={`/measure/new?customerId=${job.customer.id}&jobId=${job.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                <Ruler className="h-4 w-4" /> Measure a plan
+              <Link href={`/drawings/new?customerId=${job.customer.id}&jobId=${job.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                <Ruler className="h-4 w-4" /> New drawing
               </Link>
               {linkedTakeoffs.map((t) => (
-                <a key={t.id} href={`/api/takeoffs/${t.id}/export`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
-                  <Ruler className="h-4 w-4" /> Download marked-up plan ({t.name})
-                </a>
+                <span key={t.id} className="flex items-center gap-3">
+                  <Link href={`/drawings/${t.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
+                    <Ruler className="h-4 w-4" /> Open in Drawings ({t.name})
+                  </Link>
+                  <a href={`/api/takeoffs/${t.id}/export`} className="text-sm font-medium text-primary hover:underline">
+                    Download marked-up plan
+                  </a>
+                </span>
               ))}
             </CardContent>
           </Card>

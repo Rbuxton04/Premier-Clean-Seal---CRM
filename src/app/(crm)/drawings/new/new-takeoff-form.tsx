@@ -89,7 +89,7 @@ export function NewTakeoffForm({
           setMessage(result.message);
           return;
         }
-        router.push(`/measure/${result.data.id}`);
+        router.push(`/drawings/${result.data.id}`);
       } catch {
         setMessage("Upload failed — please try again.");
       }
@@ -150,7 +150,7 @@ export function NewTakeoffForm({
 
       <div className="flex items-center gap-3">
         <Button type="button" disabled={pending || !file || !name} onClick={submit}>
-          {pending ? "Uploading…" : "Create takeoff"}
+          {pending ? "Uploading…" : "Create drawing"}
         </Button>
         {message && <p className="text-sm text-destructive">{message}</p>}
       </div>

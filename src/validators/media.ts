@@ -20,7 +20,7 @@ export const allDocumentCategoryLabels: Record<string, string> = {
   QUOTE_PDF: "Quote",
   INVOICE_PDF: "Invoice",
   CERTIFICATE: "Warranty certificate",
-  TAKEOFF: "Plan takeoff",
+  TAKEOFF: "Drawing",
 };
 
 export const uploadDocumentSchema = z.object({

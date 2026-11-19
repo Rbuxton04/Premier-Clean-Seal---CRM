@@ -49,7 +49,7 @@ export default async function NewQuotePage({ searchParams }: { searchParams: { e
           <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
           <p className="text-sm text-muted-foreground">
             That takeoff couldn&apos;t be found.{" "}
-            <Link href="/measure" className="text-primary underline">Back to Measure</Link>
+            <Link href="/drawings" className="text-primary underline">Back to Drawings</Link>
           </p>
         </div>
       );

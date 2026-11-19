@@ -16,8 +16,8 @@ export default async function RateCardPage() {
   return (
     <div className="space-y-4">
       <div>
-        <Link href="/measure" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
-          <ArrowLeft className="h-3.5 w-3.5" /> Back to Measure
+        <Link href="/drawings" className="inline-flex items-center gap-1 text-xs text-muted-foreground hover:text-foreground">
+          <ArrowLeft className="h-3.5 w-3.5" /> Back to Drawings
         </Link>
         <h1 className="mt-1 font-display text-2xl font-semibold tracking-tight">Rate card</h1>
         <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />

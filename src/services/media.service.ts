@@ -321,7 +321,7 @@ export async function listDocuments(
       id: `takeoff-${t.id}`,
       category: "TAKEOFF",
       name: t.name,
-      url: `/measure/${t.id}`,
+      url: `/drawings/${t.id}`,
       mimeType: null,
       sizeBytes: null,
       createdAt: t.createdAt,

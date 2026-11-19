@@ -14,6 +14,19 @@ const nextConfig = {
     // navigation to a dynamic route re-fetch, closing that gap app-wide.
     staleTimes: { dynamic: 0 },
   },
+  async redirects() {
+    // The measuring tool was renamed "Drawings" (/measure -> /drawings) --
+    // permanent redirects so existing bookmarks/links keep working. Listed
+    // most-specific first: Next matches redirects in array order and stops
+    // at the first match, so /measure/new and /measure/rate-card must come
+    // before the /measure/:id catch-all or they'd never be reached.
+    return [
+      { source: "/measure", destination: "/drawings", permanent: true },
+      { source: "/measure/new", destination: "/drawings/new", permanent: true },
+      { source: "/measure/rate-card", destination: "/drawings/rate-card", permanent: true },
+      { source: "/measure/:id", destination: "/drawings/:id", permanent: true },
+    ];
+  },
   async headers() {
     // Baseline hardening. No strict script-src nonce here (Next's inline
     // bootstrap scripts would need one wired through the App Router), but

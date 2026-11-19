@@ -89,7 +89,7 @@ export function ItemsPanel({
         <Button type="button" size="sm" variant="outline" disabled={rateCardItems.length === 0 || addingAll} onClick={handleAddAll}>
           <Layers className="h-3.5 w-3.5" /> {addingAll ? "Adding…" : "Add all from rate card"}
         </Button>
-        <Link href="/measure/rate-card" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
+        <Link href="/drawings/rate-card" className="inline-flex items-center gap-1 text-muted-foreground hover:text-foreground">
           <ListOrdered className="h-3.5 w-3.5" /> Manage rate card
         </Link>
       </div>

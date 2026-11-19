@@ -20,7 +20,7 @@ export default async function TakeoffPage({ params }: { params: { id: string } }
     <div className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div>
-          <Link href="/measure" className="text-xs text-muted-foreground hover:underline">← Measure</Link>
+          <Link href="/drawings" className="text-xs text-muted-foreground hover:underline">← Drawings</Link>
           <h1 className="font-display text-2xl font-semibold tracking-tight">{takeoff.name}</h1>
           <BrandSwoosh className="mt-1 h-2 w-40 text-brand-plum" />
         </div>
