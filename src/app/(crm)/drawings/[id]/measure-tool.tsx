@@ -1,7 +1,7 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { Undo2, Eraser, MousePointer2, ImageDown } from "lucide-react";
+import { Undo2, Eraser, MousePointer2, ImageDown, Magnet } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -32,6 +32,8 @@ import { MaterialsPanel } from "./workspace/materials-panel";
 import { MeasurementsListPanel, type MeasurementRow } from "./workspace/measurements-list-panel";
 import { useWorkspaceLayout, type PanelId } from "./workspace/use-workspace-layout";
 import type { ActiveTool } from "./workspace/types";
+import { extractLineSegments } from "@/lib/pdf/takeoff-vector-extraction";
+import { buildSpatialIndex, findSnap, type SpatialIndex, type SnapResult } from "@/lib/pdf/takeoff-snap";
 
 type CustomerOption = { id: string; name: string; company: string | null };
 
@@ -113,6 +115,36 @@ export function MeasureTool({
   const panMovedRef = useRef(false);
   const [spaceHeld, setSpaceHeld] = useState(false);
   const [shiftHeld, setShiftHeld] = useState(false);
+
+  // --- Snap to drawing lines and corners (Drawings Part 2, section 1) ----
+  // Cached per file+page, built lazily the first time that page is shown
+  // (or re-shown after being toggled on), never on pages that turn out to
+  // have no vectors at all (a scanned/image-only PDF) -- see
+  // ensurePageSnapIndexed below.
+  const snapIndexRef = useRef<Map<string, { index: SpatialIndex | null; noVectors: boolean }>>(new Map());
+  const SNAP_RADIUS_SCREEN_PX = 12;
+  const [snapEnabled, setSnapEnabled] = useState(true);
+  const [snapNoVectors, setSnapNoVectors] = useState(false);
+  const [hoverSnapType, setHoverSnapType] = useState<SnapResult["type"] | null>(null);
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem("drawings-snap-enabled");
+      if (stored !== null) setSnapEnabled(stored === "1");
+    } catch {
+      // Storage unavailable -- snapping just defaults to on for this session.
+    }
+  }, []);
+  function toggleSnap() {
+    setSnapEnabled((v) => {
+      const next = !v;
+      try {
+        window.localStorage.setItem("drawings-snap-enabled", next ? "1" : "0");
+      } catch {
+        // Not fatal -- the toggle still works for this session.
+      }
+      return next;
+    });
+  }
 
   const [pointsPerMetre, setPointsPerMetre] = useState(takeoff.pointsPerMetre);
   const [scaleRatioLabel, setScaleRatioLabel] = useState(takeoff.scaleRatioLabel);
@@ -295,6 +327,70 @@ export function MeasureTool({
     renderPage();
   }, [renderPage]);
 
+  /**
+   * Extracts this page's vector line segments and builds its spatial
+   * index, once, the first time it's shown (or shown again after a
+   * previous attempt found no vectors at all -- see the scanned-PDF note
+   * below, which is cached as noVectors so this doesn't re-extract every
+   * time the same scanned page is revisited). Segments come back from
+   * extractLineSegments in raw PDF user space; each one is converted to
+   * the same baseline device space every stored measurement point is in,
+   * via the SAME baseViewport.convertToViewportPoint() technique used
+   * everywhere else in this file, so a snap target and a clicked point
+   * are always compared in the same space.
+   */
+  async function ensurePageSnapIndexed() {
+    if (!pdfDoc || !activeFileId) return;
+    const key = `${activeFileId}:${currentPage}`;
+    if (snapIndexRef.current.has(key)) {
+      setSnapNoVectors(Boolean(snapIndexRef.current.get(key)?.noVectors));
+      return;
+    }
+    const startedAt = performance.now();
+    try {
+      const page = await pdfDoc.getPage(currentPage);
+      const baseViewport = page.getViewport({ scale: 1 });
+      const opList = await page.getOperatorList();
+      const { segments } = extractLineSegments(opList.fnArray, opList.argsArray as unknown[][]);
+      if (segments.length === 0) {
+        snapIndexRef.current.set(key, { index: null, noVectors: true });
+        setSnapNoVectors(true);
+        return;
+      }
+      const converted = segments.map((s) => {
+        const [ax, ay] = baseViewport.convertToViewportPoint(s.a.x, s.a.y);
+        const [bx, by] = baseViewport.convertToViewportPoint(s.b.x, s.b.y);
+        return { a: { x: ax, y: ay }, b: { x: bx, y: by } };
+      });
+      const index = buildSpatialIndex(converted, SNAP_RADIUS_SCREEN_PX);
+      snapIndexRef.current.set(key, { index, noVectors: false });
+      setSnapNoVectors(false);
+      // eslint-disable-next-line no-console
+      console.log(`[snap] page ${currentPage}: ${segments.length} segments extracted and indexed in ${(performance.now() - startedAt).toFixed(1)}ms`);
+    } catch {
+      // A page that fails to extract (corrupt content stream, etc.) just
+      // behaves as if it had no vectors -- never a thrown error over a
+      // feature that's meant to degrade gracefully.
+      snapIndexRef.current.set(key, { index: null, noVectors: true });
+      setSnapNoVectors(true);
+    }
+  }
+
+  useEffect(() => {
+    ensurePageSnapIndexed();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [pdfDoc, currentPage, activeFileId]);
+
+  /** Converts a screen-pixel snap radius to the fixed baseline-point space the index is built in -- rotation doesn't affect this (it preserves distances), only the current zoom (renderScale) does. */
+  function trySnap(rawPoint: Point, altKeyHeld: boolean): { point: Point; type: SnapResult["type"] | null } {
+    if (!snapEnabled || altKeyHeld) return { point: rawPoint, type: null };
+    const cached = snapIndexRef.current.get(`${activeFileId}:${currentPage}`);
+    if (!cached?.index) return { point: rawPoint, type: null };
+    const radius = SNAP_RADIUS_SCREEN_PX / renderScale;
+    const result = findSnap(rawPoint, cached.index, radius);
+    return result ? { point: result.point, type: result.type } : { point: rawPoint, type: null };
+  }
+
   // Restores the page-point that was under the cursor before a zoom-at-
   // cursor wheel event, once the canvas has actually re-rendered at the new
   // scale (viewportSize only updates after that render completes).
@@ -362,6 +458,7 @@ export function MeasureTool({
         else if (key === "f" || key === "1") fitPage();
         else if (key === "2") fitWidth();
         else if (key === "r") rotateView();
+        else if (key === "s") toggleSnap();
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -477,7 +574,7 @@ export function MeasureTool({
 
   // --- Calibration -------------------------------------------------------
   function handleCalibrationClick(e: React.MouseEvent) {
-    const p = screenToPoint(e.clientX, e.clientY);
+    const p = trySnap(screenToPoint(e.clientX, e.clientY), e.altKey).point;
     const next = [...calibrationPoints, p];
     if (next.length < 2) {
       setCalibrationPoints(next);
@@ -600,11 +697,11 @@ export function MeasureTool({
     }
     if (activeTool === "select") return; // Select/Pan: a plain click does nothing, panning is a drag (below)
     if (activeTool === "count") {
-      createCountMarker(screenToPoint(e.clientX, e.clientY));
+      createCountMarker(trySnap(screenToPoint(e.clientX, e.clientY), e.altKey).point);
       return;
     }
     if (activeTool === "note") {
-      createNoteAt(screenToPoint(e.clientX, e.clientY));
+      createNoteAt(screenToPoint(e.clientX, e.clientY)); // notes aren't a measuring tool -- not in the brief's snap list
       return;
     }
     if (activeTool === "erase") return; // erasing happens by clicking the measurement/marker/note itself -- see each element's own onClick
@@ -612,17 +709,19 @@ export function MeasureTool({
       setMessage("Select or add an item before measuring.");
       return;
     }
-    const rawPoint = screenToPoint(e.clientX, e.clientY);
+    const raw = screenToPoint(e.clientX, e.clientY);
     // Chain is Ctrl+click on the Length tool, not its own palette tool --
     // see the comment on ActiveTool for why.
     const wantsChain = e.ctrlKey || e.metaKey;
 
     if (drawPoints.length === 0) {
-      setDrawPoints([rawPoint]);
+      setDrawPoints([trySnap(raw, e.altKey).point]);
       setDrawIsChain(wantsChain);
       return;
     }
-    const p = e.shiftKey ? applyShiftLock(rawPoint, drawPoints[drawPoints.length - 1]) : rawPoint;
+    // Shift-lock takes priority over free snapping (per the brief); only
+    // snap when it isn't active for this click.
+    const p = e.shiftKey ? applyShiftLock(raw, drawPoints[drawPoints.length - 1]) : trySnap(raw, e.altKey).point;
     if (!drawIsChain) {
       finalizeMeasurement([...drawPoints, p], "LENGTH");
       return;
@@ -637,9 +736,15 @@ export function MeasureTool({
 
   function handleOverlayMouseMove(e: React.MouseEvent) {
     if (drawPoints.length === 0 && !calibrating) return;
-    const rawPoint = screenToPoint(e.clientX, e.clientY);
-    const locked = !calibrating && e.shiftKey && drawPoints.length > 0 ? applyShiftLock(rawPoint, drawPoints[drawPoints.length - 1]) : rawPoint;
-    setHoverPoint(locked);
+    const raw = screenToPoint(e.clientX, e.clientY);
+    if (!calibrating && e.shiftKey && drawPoints.length > 0) {
+      setHoverSnapType(null);
+      setHoverPoint(applyShiftLock(raw, drawPoints[drawPoints.length - 1]));
+      return;
+    }
+    const snapped = trySnap(raw, e.altKey);
+    setHoverSnapType(snapped.type);
+    setHoverPoint(snapped.point);
   }
 
   function undoLastPoint() {
@@ -1438,6 +1543,19 @@ export function MeasureTool({
             <Button type="button" size="sm" variant="ghost" onClick={savePageAsImage} title="Save this page, as currently shown, as a PNG">
               <ImageDown className="h-3.5 w-3.5" /> Save page as image
             </Button>
+            <div className="mx-1 h-5 w-px bg-border" />
+            <Button
+              type="button"
+              size="sm"
+              variant={snapEnabled ? "default" : "outline"}
+              onClick={toggleSnap}
+              title="Snap to drawing lines and corners (S) -- hold Alt to bypass for one click"
+            >
+              <Magnet className="h-3.5 w-3.5" /> Snap
+            </Button>
+            {snapEnabled && snapNoVectors && (
+              <span className="text-xs text-muted-foreground">No vectors on this page (looks scanned) -- snapping has nothing to snap to here.</span>
+            )}
           </div>
 
           {pdfError ? (
@@ -1543,6 +1661,19 @@ export function MeasureTool({
                     );
                   })()}
 
+                  {hoverSnapType && hoverPoint && (() => {
+                    const sp = pointToScreen(hoverPoint);
+                    const colour = "#15803D";
+                    // A different marker shape per snap type, per the brief.
+                    if (hoverSnapType === "endpoint") {
+                      return <rect x={sp.x - 5} y={sp.y - 5} width={10} height={10} fill="none" stroke={colour} strokeWidth={2} />;
+                    }
+                    if (hoverSnapType === "intersection") {
+                      return <rect x={sp.x - 5} y={sp.y - 5} width={10} height={10} fill="none" stroke={colour} strokeWidth={2} transform={`rotate(45 ${sp.x} ${sp.y})`} />;
+                    }
+                    return <circle cx={sp.x} cy={sp.y} r={6} fill="none" stroke={colour} strokeWidth={2} />;
+                  })()}
+
                   {calibrationPoints.map((p, i) => {
                     const sp = pointToScreen(p);
                     return <circle key={i} cx={sp.x} cy={sp.y} r={4} fill="#B91C1C" />;
@@ -1565,6 +1696,7 @@ export function MeasureTool({
             cursor={hoverPoint}
             zoomPercent={renderScale * 100}
             shiftLocked={shiftHeld && drawPoints.length > 0 && (activeTool === "length")}
+            snapType={hoverSnapType}
           />
         </div>
 
