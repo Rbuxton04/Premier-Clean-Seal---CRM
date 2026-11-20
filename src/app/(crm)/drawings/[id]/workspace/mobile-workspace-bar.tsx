@@ -41,7 +41,7 @@ export function MobileWorkspaceBar({
               <button
                 type="button"
                 onClick={() => onToggleCollapsed(id)}
-                className="flex w-full items-center justify-between py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
+                className="flex min-h-11 w-full items-center justify-between py-2 text-left text-xs font-semibold uppercase tracking-wide text-muted-foreground"
                 aria-expanded={!layout.panels[id].collapsed}
               >
                 {panelTitles[id]}
@@ -54,11 +54,11 @@ export function MobileWorkspaceBar({
       )}
 
       <div className="fixed inset-x-0 bottom-0 z-30 flex items-center gap-2 border-t bg-card px-2 py-1.5">
-        <ToolPalette activeTool={activeTool} onSelectTool={onSelectTool} orientation="horizontal" />
+        <ToolPalette activeTool={activeTool} onSelectTool={onSelectTool} orientation="horizontal" size="touch" />
         <button
           type="button"
           onClick={() => setSheetOpen((v) => !v)}
-          className="ml-auto flex items-center gap-1 rounded-md border px-2 py-1.5 text-xs font-medium text-muted-foreground hover:bg-accent"
+          className="ml-auto flex h-11 items-center gap-1 rounded-md border px-3 text-xs font-medium text-muted-foreground hover:bg-accent"
         >
           Panels {sheetOpen ? <ChevronDown className="h-3.5 w-3.5" /> : <ChevronUp className="h-3.5 w-3.5" />}
         </button>

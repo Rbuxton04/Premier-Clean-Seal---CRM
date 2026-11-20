@@ -1,7 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
-import { Undo2, Eraser, MousePointer2, ImageDown, Magnet } from "lucide-react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
+import { Undo2, Redo2, Eraser, MousePointer2, ImageDown, Magnet, Search, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Select } from "@/components/ui/select";
@@ -146,6 +146,12 @@ export function MeasureTool({
     });
   }
 
+  // --- Magnifier loupe + shortcuts cheat sheet (Drawings Part 2, section 7) ---
+  const [magnifierEnabled, setMagnifierEnabled] = useState(false);
+  const [magnifierPos, setMagnifierPos] = useState<{ clientX: number; clientY: number; canvasX: number; canvasY: number } | null>(null);
+  const magnifierCanvasRef = useRef<HTMLCanvasElement>(null);
+  const [showShortcuts, setShowShortcuts] = useState(false);
+
   const [pointsPerMetre, setPointsPerMetre] = useState(takeoff.pointsPerMetre);
   const [scaleRatioLabel, setScaleRatioLabel] = useState(takeoff.scaleRatioLabel);
   const [activeTool, setActiveTool] = useState<ActiveTool>("select");
@@ -156,6 +162,13 @@ export function MeasureTool({
 
   const [items, setItems] = useState<TakeoffItemDetail[]>(takeoff.items);
   const [selectedItemId, setSelectedItemId] = useState<string | null>(takeoff.items[0]?.id ?? null);
+  // Mirrors items/notes for undo/redo closures that may fire long after
+  // the render that created them -- reading items/notes directly there
+  // would close over a stale snapshot.
+  const itemsRef = useRef(items);
+  useEffect(() => {
+    itemsRef.current = items;
+  }, [items]);
 
   const [drawPoints, setDrawPoints] = useState<Point[]>([]);
   const [drawIsChain, setDrawIsChain] = useState(false);
@@ -164,28 +177,57 @@ export function MeasureTool({
   const [labelDraft, setLabelDraft] = useState("");
   const [message, setMessage] = useState<string | null>(null);
 
-  // --- Undo toast (Drawings Part 2, section 5) -- a single-slot "undo the
-  // last thing" rather than a full stack; section 7's Ctrl+Z undo/redo
-  // generalises this same announceUndo call into a real stack later, so
-  // this isn't throwaway -- it's the first slice of that same mechanism. --
-  const [lastAction, setLastAction] = useState<{ label: string; undo: () => Promise<void> } | null>(null);
-  const lastActionTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // --- Undo/redo (Drawings Part 2, section 7) -- a real stack of every
+  // reversible edit (section 5 started this as a single-slot "undo the
+  // last thing" toast; this generalises the same mechanism). Entries live
+  // in refs, not state, since they hold closures over server actions, not
+  // serialisable data; historyVersion just forces a re-render so the
+  // toolbar's Undo/Redo buttons can reflect whether either stack is
+  // non-empty. A fresh user action always clears the redo stack.
+  type HistoryEntry = { label: string; undo: () => Promise<void>; redo: () => Promise<void> };
+  const undoStackRef = useRef<HistoryEntry[]>([]);
+  const redoStackRef = useRef<HistoryEntry[]>([]);
+  const [, setHistoryVersion] = useState(0);
+  const [toast, setToast] = useState<{ text: string; action: "undo" | "redo" } | null>(null);
+  const toastTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  function announceUndo(label: string, undo: () => Promise<void>) {
-    setLastAction({ label, undo });
-    if (lastActionTimerRef.current) clearTimeout(lastActionTimerRef.current);
-    lastActionTimerRef.current = setTimeout(() => setLastAction(null), 6000);
+  function showToast(text: string, action: "undo" | "redo") {
+    setToast({ text, action });
+    if (toastTimerRef.current) clearTimeout(toastTimerRef.current);
+    toastTimerRef.current = setTimeout(() => setToast(null), 6000);
   }
 
-  async function runUndo() {
-    if (!lastAction) return;
-    const { undo } = lastAction;
-    setLastAction(null);
-    await undo();
+  function pushHistory(entry: HistoryEntry) {
+    undoStackRef.current.push(entry);
+    redoStackRef.current = [];
+    setHistoryVersion((v) => v + 1);
+    showToast(entry.label, "undo");
+  }
+
+  async function performUndo() {
+    const entry = undoStackRef.current.pop();
+    if (!entry) return;
+    redoStackRef.current.push(entry);
+    setHistoryVersion((v) => v + 1);
+    await entry.undo();
+    showToast(`Undid: ${entry.label}`, "redo");
+  }
+
+  async function performRedo() {
+    const entry = redoStackRef.current.pop();
+    if (!entry) return;
+    undoStackRef.current.push(entry);
+    setHistoryVersion((v) => v + 1);
+    await entry.redo();
+    showToast(`Redid: ${entry.label}`, "undo");
   }
 
   // --- Notes (Drawings Part 2) -- pins on the plan, independent of items ---
   const [notes, setNotes] = useState<TakeoffDetail["notes"]>(takeoff.notes);
+  const notesRef = useRef(notes);
+  useEffect(() => {
+    notesRef.current = notes;
+  }, [notes]);
   const [selectedNoteId, setSelectedNoteId] = useState<string | null>(null);
   const [noteTextDraft, setNoteTextDraft] = useState("");
   const noteDragRef = useRef<{ id: string; startX: number; startY: number; originX: number; originY: number } | null>(null);
@@ -327,6 +369,25 @@ export function MeasureTool({
     renderPage();
   }, [renderPage]);
 
+  // Magnifier loupe (Drawings Part 2, section 7): redraws a zoomed crop of
+  // the already-rendered main canvas centred on the cursor -- re-reads the
+  // canvas's own pixels rather than re-rendering the PDF page, so it's
+  // cheap enough to run on every mouse move.
+  const MAGNIFIER_SIZE = 160;
+  const MAGNIFIER_ZOOM = 3;
+  useEffect(() => {
+    if (!magnifierEnabled || !magnifierPos) return;
+    const src = canvasRef.current;
+    const dst = magnifierCanvasRef.current;
+    if (!src || !dst) return;
+    const ctx = dst.getContext("2d");
+    if (!ctx) return;
+    const srcSize = MAGNIFIER_SIZE / MAGNIFIER_ZOOM;
+    ctx.imageSmoothingEnabled = false; // a crisp pixel zoom, not a blurred one
+    ctx.clearRect(0, 0, MAGNIFIER_SIZE, MAGNIFIER_SIZE);
+    ctx.drawImage(src, magnifierPos.canvasX - srcSize / 2, magnifierPos.canvasY - srcSize / 2, srcSize, srcSize, 0, 0, MAGNIFIER_SIZE, MAGNIFIER_SIZE);
+  }, [magnifierEnabled, magnifierPos]);
+
   /**
    * Extracts this page's vector line segments and builds its spatial
    * index, once, the first time it's shown (or shown again after a
@@ -444,10 +505,17 @@ export function MeasureTool({
         setActiveTool((t) => (t === "calibrate" ? "select" : t));
       } else if (e.key === "Enter" && drawIsChain && drawPoints.length >= 2) {
         finalizeMeasurement(drawPoints, "CHAIN");
+      } else if (!isTyping && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "z") {
+        e.preventDefault();
+        if (e.shiftKey) performRedo();
+        else performUndo();
+      } else if (!isTyping && (e.ctrlKey || e.metaKey) && !e.altKey && e.key.toLowerCase() === "y") {
+        e.preventDefault();
+        performRedo();
       } else if (!isTyping && !e.ctrlKey && !e.metaKey && !e.altKey) {
-        // V/L/C/N/K/E pick a tool; F/1/2 fit; R rotate -- see tool-
-        // palette.tsx for why V (not S) is select/pan: S is reserved for
-        // the Part 2 snap toggle.
+        // V/L/C/N/K/E pick a tool; F/1/2 fit; R rotate; M magnifier; ? help
+        // -- see tool-palette.tsx for why V (not S) is select/pan: S is
+        // reserved for the Part 2 snap toggle.
         const key = e.key.toLowerCase();
         if (key === "v") setActiveTool("select");
         else if (key === "l") setActiveTool("length");
@@ -459,6 +527,8 @@ export function MeasureTool({
         else if (key === "2") fitWidth();
         else if (key === "r") rotateView();
         else if (key === "s") toggleSnap();
+        else if (key === "m") setMagnifierEnabled((v) => !v);
+        else if (e.key === "?") setShowShortcuts((v) => !v);
       }
     }
     window.addEventListener("keydown", onKeyDown);
@@ -639,6 +709,51 @@ export function MeasureTool({
     );
   }
 
+  /** Pure create: calls the server action, mirrors the result into items, and returns the new measurement -- no history side effects, so undo/redo closures can call it directly without pushing a second history entry. */
+  async function createMeasurementCore(
+    itemId: string,
+    pageNumber: number,
+    takeoffFileId: string | null,
+    type: "LENGTH" | "CHAIN" | "COUNT",
+    points: Point[],
+    label: string | null
+  ): Promise<TakeoffMeasurementItem | null> {
+    const result = await createMeasurementAction(
+      takeoff.id,
+      { takeoffItemId: itemId, pageNumber, takeoffFileId: takeoffFileId ?? undefined, type, points, label: label ?? undefined },
+      pointsPerMetre
+    );
+    if (!result.ok) {
+      setMessage(result.message);
+      return null;
+    }
+    const measurement: TakeoffMeasurementItem = { id: result.data.id, pageNumber, takeoffFileId, type, points, computedMetres: result.data.computedMetres, label };
+    addMeasurementToItemState(itemId, measurement);
+    return measurement;
+  }
+
+  /** Pure delete: calls the server action, mirrors the result into items, and returns the removed measurement's full data (needed to recreate it on undo) -- no history side effects. Reads itemsRef, not items, so it gives the right answer even when called from a redo closure long after the render that created it. */
+  async function deleteMeasurementCore(itemId: string, measurementId: string): Promise<TakeoffMeasurementItem | null> {
+    const item = itemsRef.current.find((i) => i.id === itemId);
+    const removed = item?.measurements.find((m) => m.id === measurementId);
+    if (!removed) return null;
+    const result = await deleteMeasurementAction(takeoff.id, measurementId);
+    if (!result.ok) return null;
+    setItems((cur) =>
+      cur.map((it) => {
+        if (it.id !== itemId) return it;
+        const measurements = it.measurements.filter((m) => m.id !== measurementId);
+        if (it.kind === "COUNT") {
+          const count = it.count - 1;
+          return { ...it, measurements, count, lineTotalGbp: +(count * Number(it.pricePerMetre)).toFixed(2) };
+        }
+        const totalMetres = +(it.totalMetres - Number(removed.computedMetres)).toFixed(2);
+        return { ...it, measurements, totalMetres, lineTotalGbp: +(totalMetres * Number(it.pricePerMetre)).toFixed(2) };
+      })
+    );
+    return removed;
+  }
+
   async function finalizeMeasurement(points: Point[], type: "LENGTH" | "CHAIN") {
     if (!selectedItemId) {
       setMessage("Select an item first.");
@@ -648,21 +763,26 @@ export function MeasureTool({
     const itemId = selectedItemId;
     const pageNumber = currentPage;
     const takeoffFileId = activeFileId || null;
-    const result = await createMeasurementAction(takeoff.id, { takeoffItemId: itemId, pageNumber, takeoffFileId: takeoffFileId ?? undefined, type, points }, pointsPerMetre);
+    const created = await createMeasurementCore(itemId, pageNumber, takeoffFileId, type, points, null);
     setDrawPoints([]);
     setHoverPoint(null);
-    if (!result.ok) {
-      setMessage(result.message);
-      return;
-    }
-    const measurement: TakeoffMeasurementItem = { id: result.data.id, pageNumber, takeoffFileId, type, points, computedMetres: result.data.computedMetres, label: null };
-    addMeasurementToItemState(itemId, measurement);
-    const item = items.find((i) => i.id === itemId);
-    if (item) {
-      announceUndo(`Deleted ${type === "CHAIN" ? "chain" : "length"} on ${item.name}`, async () => {
-        await removeMeasurement(itemId, measurement.id);
-      });
-    }
+    if (!created) return;
+    const item = itemsRef.current.find((i) => i.id === itemId);
+    if (!item) return;
+    // A mutable holder, not a captured id -- redo recreates with a NEW
+    // server-assigned id each time, so a later undo must delete whichever
+    // id is currently live, not the one from the first creation.
+    const holder = { measurementId: created.id };
+    pushHistory({
+      label: `Added ${type === "CHAIN" ? "chain" : "length"} on ${item.name}`,
+      undo: async () => {
+        await deleteMeasurementCore(itemId, holder.measurementId);
+      },
+      redo: async () => {
+        const recreated = await createMeasurementCore(itemId, pageNumber, takeoffFileId, type, points, null);
+        if (recreated) holder.measurementId = recreated.id;
+      },
+    });
   }
 
   /** A COUNT marker is one point, one measurement, quantity 1 -- see the TakeoffItemDetail.count comment in takeoff.service.ts. */
@@ -674,19 +794,29 @@ export function MeasureTool({
     const itemId = selectedItemId;
     const pageNumber = currentPage;
     const takeoffFileId = activeFileId || null;
-    const result = await createMeasurementAction(takeoff.id, { takeoffItemId: itemId, pageNumber, takeoffFileId: takeoffFileId ?? undefined, type: "COUNT", points: [p] }, pointsPerMetre);
-    if (!result.ok) {
-      setMessage(result.message);
-      return;
-    }
-    const measurement: TakeoffMeasurementItem = { id: result.data.id, pageNumber, takeoffFileId, type: "COUNT", points: [p], computedMetres: 0, label: null };
-    addMeasurementToItemState(itemId, measurement);
-    const item = items.find((i) => i.id === itemId);
-    if (item) announceUndo(`Added count marker on ${item.name}`, async () => removeMeasurement(itemId, measurement.id));
+    const created = await createMeasurementCore(itemId, pageNumber, takeoffFileId, "COUNT", [p], null);
+    if (!created) return;
+    const item = itemsRef.current.find((i) => i.id === itemId);
+    if (!item) return;
+    const holder = { measurementId: created.id };
+    pushHistory({
+      label: `Added count marker on ${item.name}`,
+      undo: async () => {
+        await deleteMeasurementCore(itemId, holder.measurementId);
+      },
+      redo: async () => {
+        const recreated = await createMeasurementCore(itemId, pageNumber, takeoffFileId, "COUNT", [p], null);
+        if (recreated) holder.measurementId = recreated.id;
+      },
+    });
   }
 
   function handleOverlayClick(e: React.MouseEvent) {
     if (e.detail > 1) return; // double-click is handled separately, below
+    if (longPressFiredRef.current) {
+      longPressFiredRef.current = false; // the long-press above already finished the chain -- don't also add a point from the tap that follows it
+      return;
+    }
     if (panMovedRef.current) {
       panMovedRef.current = false; // a real pan drag just ended under this click -- don't also treat it as a measurement click
       return;
@@ -734,8 +864,18 @@ export function MeasureTool({
     if (drawIsChain && drawPoints.length >= 2) finalizeMeasurement(drawPoints, "CHAIN");
   }
 
+  const MEASURING_TOOLS: ActiveTool[] = ["length", "count", "calibrate"];
+
   function handleOverlayMouseMove(e: React.MouseEvent) {
-    if (drawPoints.length === 0 && !calibrating) return;
+    if (magnifierEnabled && MEASURING_TOOLS.includes(activeTool)) {
+      const rect = overlayRef.current?.getBoundingClientRect();
+      if (rect) setMagnifierPos({ clientX: e.clientX, clientY: e.clientY, canvasX: e.clientX - rect.left, canvasY: e.clientY - rect.top });
+    } else if (magnifierPos) {
+      setMagnifierPos(null);
+    }
+    // Count has no in-progress drawPoints of its own, but still benefits
+    // from the live snap indicator while choosing where to drop a marker.
+    if (drawPoints.length === 0 && !calibrating && activeTool !== "count") return;
     const raw = screenToPoint(e.clientX, e.clientY);
     if (!calibrating && e.shiftKey && drawPoints.length > 0) {
       setHoverSnapType(null);
@@ -745,6 +885,10 @@ export function MeasureTool({
     const snapped = trySnap(raw, e.altKey);
     setHoverSnapType(snapped.type);
     setHoverPoint(snapped.point);
+  }
+
+  function handleOverlayMouseLeave() {
+    setMagnifierPos(null);
   }
 
   function undoLastPoint() {
@@ -761,14 +905,42 @@ export function MeasureTool({
     return activeTool === "select" || spaceHeld || e.button === 1;
   }
 
+  // Long-press to finish a chain on touch (Drawings Part 2, section 7) --
+  // double-tap is unreliable on touch (often eaten by the browser's own
+  // zoom-gesture detection), so a long hold is the touch equivalent of the
+  // desktop double-click in handleOverlayDoubleClick. Cancelled by any
+  // real movement, so it doesn't fire under a two-finger pan/pinch.
+  const longPressTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const longPressStartRef = useRef<{ x: number; y: number } | null>(null);
+  const longPressFiredRef = useRef(false);
+  const LONG_PRESS_MS = 500;
+
+  function cancelLongPress() {
+    if (longPressTimerRef.current) {
+      clearTimeout(longPressTimerRef.current);
+      longPressTimerRef.current = null;
+    }
+    longPressStartRef.current = null;
+  }
+
   function handleOverlayPointerDown(e: React.PointerEvent) {
-    if (!wantsPan(e)) return;
-    const container = viewerContainerRef.current;
-    if (!container) return;
-    e.preventDefault();
-    (e.currentTarget as Element).setPointerCapture(e.pointerId);
-    panRef.current = { startX: e.clientX, startY: e.clientY, startScrollLeft: container.scrollLeft, startScrollTop: container.scrollTop };
-    panMovedRef.current = false;
+    if (wantsPan(e)) {
+      const container = viewerContainerRef.current;
+      if (!container) return;
+      e.preventDefault();
+      (e.currentTarget as Element).setPointerCapture(e.pointerId);
+      panRef.current = { startX: e.clientX, startY: e.clientY, startScrollLeft: container.scrollLeft, startScrollTop: container.scrollTop };
+      panMovedRef.current = false;
+      return;
+    }
+    if (e.pointerType === "touch" && drawIsChain && drawPoints.length >= 2) {
+      longPressFiredRef.current = false;
+      longPressStartRef.current = { x: e.clientX, y: e.clientY };
+      longPressTimerRef.current = setTimeout(() => {
+        longPressFiredRef.current = true;
+        finalizeMeasurement(drawPoints, "CHAIN");
+      }, LONG_PRESS_MS);
+    }
   }
 
   function handleOverlayPointerMove(e: React.PointerEvent) {
@@ -782,11 +954,17 @@ export function MeasureTool({
       container.scrollTop = pan.startScrollTop - dy;
       return;
     }
+    if (longPressStartRef.current) {
+      const dx = e.clientX - longPressStartRef.current.x;
+      const dy = e.clientY - longPressStartRef.current.y;
+      if (Math.hypot(dx, dy) > 10) cancelLongPress();
+    }
     handleOverlayMouseMove(e);
   }
 
   function handleOverlayPointerUp() {
     panRef.current = null;
+    cancelLongPress();
   }
 
   /**
@@ -941,36 +1119,24 @@ export function MeasureTool({
     setSelectedMeasurement(null);
   }
 
+  /** User-initiated erase (Erase tool click, or deleteSelectedMeasurement) -- pushes a history entry, unlike deleteMeasurementCore which it wraps. */
   async function removeMeasurement(itemId: string, measurementId: string) {
-    const item = items.find((i) => i.id === itemId);
-    const removed = item?.measurements.find((m) => m.id === measurementId);
-    const result = await deleteMeasurementAction(takeoff.id, measurementId);
-    if (result.ok) {
-      setItems((cur) =>
-        cur.map((it) => {
-          if (it.id !== itemId) return it;
-          const measurements = it.measurements.filter((m) => m.id !== measurementId);
-          if (it.kind === "COUNT") {
-            const count = it.count - (removed ? 1 : 0);
-            return { ...it, measurements, count, lineTotalGbp: +(count * Number(it.pricePerMetre)).toFixed(2) };
-          }
-          const totalMetres = +(it.totalMetres - Number(removed?.computedMetres ?? 0)).toFixed(2);
-          return { ...it, measurements, totalMetres, lineTotalGbp: +(totalMetres * Number(it.pricePerMetre)).toFixed(2) };
-        })
-      );
-      if (removed && item) {
-        announceUndo(`Deleted ${item.name} measurement`, async () => {
-          const recreated = await createMeasurementAction(
-            takeoff.id,
-            { takeoffItemId: itemId, pageNumber: removed.pageNumber, takeoffFileId: removed.takeoffFileId ?? undefined, type: removed.type, points: removed.points, label: removed.label ?? undefined },
-            pointsPerMetre
-          );
-          if (recreated.ok) {
-            addMeasurementToItemState(itemId, { ...removed, id: recreated.data.id, computedMetres: recreated.data.computedMetres });
-          }
-        });
-      }
-    }
+    const item = itemsRef.current.find((i) => i.id === itemId);
+    const removed = await deleteMeasurementCore(itemId, measurementId);
+    if (!removed || !item) return;
+    // Erasing always creates a brand-new id on undo (re-create), same
+    // id-churn issue as the add/undo pair above, in the opposite direction.
+    const holder = { measurementId };
+    pushHistory({
+      label: `Deleted ${item.name} measurement`,
+      undo: async () => {
+        const recreated = await createMeasurementCore(itemId, removed.pageNumber, removed.takeoffFileId, removed.type, removed.points, removed.label);
+        if (recreated) holder.measurementId = recreated.id;
+      },
+      redo: async () => {
+        await deleteMeasurementCore(itemId, holder.measurementId);
+      },
+    });
   }
 
   async function deleteSelectedMeasurement() {
@@ -1021,16 +1187,23 @@ export function MeasureTool({
     setSelectedNoteId(null);
   }
 
-  /** Soft-deleted, so undo is an exact restore (same id and text), not a re-create. */
+  /** Soft-deleted, so the id never changes across an undo/redo cycle -- no mutable holder needed here, unlike the measurement pairs above. */
   async function removeNote(noteId: string) {
-    const note = notes.find((n) => n.id === noteId);
+    const note = notesRef.current.find((n) => n.id === noteId);
     const result = await deleteTakeoffNoteAction(takeoff.id, noteId);
     if (result.ok) {
       setNotes((cur) => cur.filter((n) => n.id !== noteId));
       if (note) {
-        announceUndo("Deleted note", async () => {
-          const restored = await restoreTakeoffNoteAction(takeoff.id, noteId);
-          if (restored.ok) setNotes((cur) => [...cur, note]);
+        pushHistory({
+          label: "Deleted note",
+          undo: async () => {
+            const restored = await restoreTakeoffNoteAction(takeoff.id, noteId);
+            if (restored.ok) setNotes((cur) => [...cur, note]);
+          },
+          redo: async () => {
+            const result2 = await deleteTakeoffNoteAction(takeoff.id, noteId);
+            if (result2.ok) setNotes((cur) => cur.filter((n) => n.id !== noteId));
+          },
         });
       }
     }
@@ -1478,10 +1651,60 @@ export function MeasureTool({
 
   return (
     <div className={fullScreen ? "fixed inset-0 z-40 flex flex-col gap-2 overflow-auto bg-background p-3" : "flex flex-col gap-2"}>
-      {lastAction && (
+      {toast && (
         <div className="fixed bottom-4 left-1/2 z-50 flex -translate-x-1/2 items-center gap-3 rounded-lg border bg-card px-4 py-2 text-sm shadow-xl">
-          <span>{lastAction.label}</span>
-          <Button type="button" size="sm" variant="outline" onClick={runUndo}>Undo</Button>
+          <span>{toast.text}</span>
+          <Button type="button" size="sm" variant="outline" onClick={toast.action === "undo" ? performUndo : performRedo}>
+            {toast.action === "undo" ? "Undo" : "Redo"}
+          </Button>
+        </div>
+      )}
+
+      {magnifierEnabled && magnifierPos && (
+        <div
+          className="pointer-events-none fixed z-50 overflow-hidden rounded-full border-2 border-brand-plum bg-white shadow-xl"
+          style={{ left: magnifierPos.clientX + 24, top: magnifierPos.clientY - MAGNIFIER_SIZE - 24, width: MAGNIFIER_SIZE, height: MAGNIFIER_SIZE }}
+        >
+          <canvas ref={magnifierCanvasRef} width={MAGNIFIER_SIZE} height={MAGNIFIER_SIZE} />
+          <div className="absolute left-1/2 top-1/2 h-4 w-4 -translate-x-1/2 -translate-y-1/2 rounded-full border border-brand-plum" />
+        </div>
+      )}
+
+      {showShortcuts && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 p-4" onClick={() => setShowShortcuts(false)}>
+          <div className="max-h-[80vh] w-full max-w-md overflow-auto rounded-lg border bg-card p-5 text-sm shadow-xl" onClick={(e) => e.stopPropagation()}>
+            <div className="mb-3 flex items-center justify-between">
+              <h3 className="font-semibold">Keyboard shortcuts</h3>
+              <Button type="button" size="sm" variant="ghost" onClick={() => setShowShortcuts(false)}>Close</Button>
+            </div>
+            <dl className="grid grid-cols-[auto_1fr] gap-x-4 gap-y-1.5">
+              {[
+                ["V", "Select / pan"],
+                ["L", "Length (Ctrl+click to start a chain)"],
+                ["C", "Count"],
+                ["N", "Note"],
+                ["K", "Calibrate"],
+                ["E", "Erase"],
+                ["Shift (hold)", "Lock to 0/45/90 degrees"],
+                ["S", "Toggle snap to lines and corners"],
+                ["Alt (hold)", "Bypass snap for one click"],
+                ["M", "Toggle magnifier loupe"],
+                ["R", "Rotate view"],
+                ["F or 1", "Fit page"],
+                ["2", "Fit width"],
+                ["Ctrl+Z", "Undo"],
+                ["Ctrl+Shift+Z or Ctrl+Y", "Redo"],
+                ["Esc", "Cancel the current draw or calibration"],
+                ["Enter", "Finish a chain"],
+                ["?", "Toggle this cheat sheet"],
+              ].map(([key, desc]) => (
+                <Fragment key={key}>
+                  <dt className="whitespace-nowrap font-mono text-xs text-muted-foreground">{key}</dt>
+                  <dd>{desc}</dd>
+                </Fragment>
+              ))}
+            </dl>
+          </div>
         </div>
       )}
       <input
@@ -1556,6 +1779,25 @@ export function MeasureTool({
             {snapEnabled && snapNoVectors && (
               <span className="text-xs text-muted-foreground">No vectors on this page (looks scanned) -- snapping has nothing to snap to here.</span>
             )}
+            <Button
+              type="button"
+              size="sm"
+              variant={magnifierEnabled ? "default" : "outline"}
+              onClick={() => setMagnifierEnabled((v) => !v)}
+              title="Magnifier loupe while measuring (M)"
+            >
+              <Search className="h-3.5 w-3.5" /> Magnifier
+            </Button>
+            <div className="mx-1 h-5 w-px bg-border" />
+            <Button type="button" size="sm" variant="outline" disabled={undoStackRef.current.length === 0} onClick={performUndo} title="Undo (Ctrl+Z)">
+              <Undo2 className="h-3.5 w-3.5" /> Undo
+            </Button>
+            <Button type="button" size="sm" variant="outline" disabled={redoStackRef.current.length === 0} onClick={performRedo} title="Redo (Ctrl+Shift+Z)">
+              <Redo2 className="h-3.5 w-3.5" /> Redo
+            </Button>
+            <Button type="button" size="sm" variant="ghost" onClick={() => setShowShortcuts(true)} title="Keyboard shortcuts (?)">
+              <HelpCircle className="h-3.5 w-3.5" />
+            </Button>
           </div>
 
           {pdfError ? (
@@ -1576,6 +1818,7 @@ export function MeasureTool({
                   onPointerDown={handleOverlayPointerDown}
                   onPointerMove={handleOverlayPointerMove}
                   onPointerUp={handleOverlayPointerUp}
+                  onPointerLeave={handleOverlayMouseLeave}
                 >
                   {pageMeasurements.map((m) => {
                     const screenPts = m.points.map(pointToScreen);

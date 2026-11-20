@@ -15,8 +15,18 @@ const TOOLS: ToolDef[] = [
   { id: "erase", label: "Erase", shortcut: "E", icon: Eraser },
 ];
 
-/** Vertical left-hand tool palette -- SketchUp-style single-select active tool. */
-export function ToolPalette({ activeTool, onSelectTool, orientation = "vertical" }: { activeTool: ActiveTool; onSelectTool: (tool: ActiveTool) => void; orientation?: "vertical" | "horizontal" }) {
+/** Vertical left-hand tool palette -- SketchUp-style single-select active tool. size="touch" (used by the mobile bottom bar) bumps each button to a full 44px tap target, per Apple/WCAG touch-target guidance -- the desktop palette stays compact since a mouse doesn't need it. */
+export function ToolPalette({
+  activeTool,
+  onSelectTool,
+  orientation = "vertical",
+  size = "default",
+}: {
+  activeTool: ActiveTool;
+  onSelectTool: (tool: ActiveTool) => void;
+  orientation?: "vertical" | "horizontal";
+  size?: "default" | "touch";
+}) {
   return (
     <div className={cn("flex gap-1 rounded-lg border bg-card p-1.5", orientation === "vertical" ? "flex-col" : "flex-row")}>
       {TOOLS.map((tool) => {
@@ -31,11 +41,12 @@ export function ToolPalette({ activeTool, onSelectTool, orientation = "vertical"
             aria-pressed={active}
             aria-label={tool.label}
             className={cn(
-              "flex h-9 w-9 items-center justify-center rounded-md transition-colors",
+              "flex items-center justify-center rounded-md transition-colors",
+              size === "touch" ? "h-11 w-11" : "h-9 w-9",
               active ? "bg-brand-plum text-white" : "text-muted-foreground hover:bg-accent hover:text-foreground"
             )}
           >
-            <Icon className="h-4 w-4" />
+            <Icon className={size === "touch" ? "h-5 w-5" : "h-4 w-4"} />
           </button>
         );
       })}
