@@ -64,7 +64,7 @@ export function QuoteActions({
         ))}
         {linkedTakeoffs.map((t) => (
           <Button key={`${t.id}-export`} type="button" size="sm" variant="outline" asChild>
-            <a href={`/api/takeoffs/${t.id}/export`}>
+            <a href={`/api/drawings/${t.id}/export`}>
               Download marked-up plan ({t.name})
             </a>
           </Button>

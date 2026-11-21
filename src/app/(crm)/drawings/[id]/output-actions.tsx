@@ -44,6 +44,8 @@ export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: 
   const [copied, setCopied] = useState<"list" | "table" | null>(null);
   const [exportPrices, setExportPrices] = useState(true);
   const [exportPages, setExportPages] = useState<"measured" | "all">("measured");
+  const [exportNotes, setExportNotes] = useState(false);
+  const [exportMaterials, setExportMaterials] = useState(false);
 
   async function copyList() {
     await navigator.clipboard.writeText(buildListText(items, grandTotalGbp));
@@ -94,9 +96,17 @@ export function OutputActions({ takeoffId, items, grandTotalGbp }: { takeoffId: 
       <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
         <input type="checkbox" checked={exportPages === "all"} onChange={(e) => setExportPages(e.target.checked ? "all" : "measured")} /> All pages
       </label>
-      <Button type="button" size="sm" variant="outline" disabled={!hasQuantities} asChild>
-        <a href={`/api/takeoffs/${takeoffId}/export?prices=${exportPrices ? "1" : "0"}&pages=${exportPages}`}>
-          <Download className="h-3.5 w-3.5" /> Download marked-up plan
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <input type="checkbox" checked={exportNotes} onChange={(e) => setExportNotes(e.target.checked)} /> Notes
+      </label>
+      <label className="flex items-center gap-1.5 text-xs text-muted-foreground">
+        <input type="checkbox" checked={exportMaterials} onChange={(e) => setExportMaterials(e.target.checked)} /> Materials page
+      </label>
+      <Button type="button" size="sm" variant="outline" asChild>
+        <a
+          href={`/api/drawings/${takeoffId}/export?prices=${exportPrices ? "1" : "0"}&pages=${exportPages}&notes=${exportNotes ? "1" : "0"}&materials=${exportMaterials ? "1" : "0"}`}
+        >
+          <Download className="h-3.5 w-3.5" /> Download marked-up PDF
         </a>
       </Button>
     </div>

@@ -5,7 +5,7 @@ import { downloadObject, isSupabaseStorageConfigured } from "@/lib/storage/supab
 // Same-origin, auth-gated PDF stream for the Drawings workspace viewer
 // (fixes the "plan doesn't display" report -- see measure-tool.tsx's PDF-
 // load effect comment). Staff-only (default Clerk middleware), org-scoped
-// and 404s on a soft-deleted takeoff, same as /api/takeoffs/[id]/export.
+// and 404s on a soft-deleted takeoff, same as /api/drawings/[id]/export.
 // An optional ?fileId= picks one of a drawing's several files (Drawings
 // Part 1 Step 4); omitted, it's the first one.
 //

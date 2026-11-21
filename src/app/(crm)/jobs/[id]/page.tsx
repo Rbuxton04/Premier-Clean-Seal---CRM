@@ -236,7 +236,7 @@ export default async function JobDetailPage({ params }: { params: { id: string }
                   <Link href={`/drawings/${t.id}`} className="flex items-center gap-1.5 text-sm font-medium text-primary hover:underline">
                     <Ruler className="h-4 w-4" /> Open in Drawings ({t.name})
                   </Link>
-                  <a href={`/api/takeoffs/${t.id}/export`} className="text-sm font-medium text-primary hover:underline">
+                  <a href={`/api/drawings/${t.id}/export`} className="text-sm font-medium text-primary hover:underline">
                     Download marked-up plan
                   </a>
                 </span>

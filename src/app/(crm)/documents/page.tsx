@@ -105,7 +105,7 @@ export default async function DocumentsPage({
                             Open
                           </a>
                           <a
-                            href={`/api/takeoffs/${d.id.replace("takeoff-", "")}/export`}
+                            href={`/api/drawings/${d.id.replace("takeoff-", "")}/export`}
                             className="inline-flex items-center gap-1 text-xs font-medium text-primary hover:underline"
                           >
                             <FileDown className="h-3.5 w-3.5" /> Download PDF

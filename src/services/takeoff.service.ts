@@ -195,31 +195,29 @@ export async function getTakeoff(id: string): Promise<TakeoffDetail | null> {
   };
 }
 
+/** One of a drawing's files, for the export route -- the RAW storage path, not a resolved signed URL, since the route downloads the source bytes server-side via downloadObject(). */
+export type TakeoffExportFile = { id: string; name: string; rawPath: string; sortOrder: number; pointsPerMetre: number | null };
+
 export type TakeoffExportDetail = {
   id: string;
   name: string;
-  /** The RAW storage path, not a signed URL -- the export route downloads the source bytes server-side via downloadObject(), it never needs a browser-facing link. */
-  pdfFilePath: string;
+  /** Every file on the drawing, in tab order (Drawings Part 3 -- previously only the first file was exported; see the export builder's own comment on why this now matters). */
+  files: TakeoffExportFile[];
   customer: { id: string; name: string; company: string | null } | null;
   pointsPerMetre: number;
   scaleRatioLabel: string | null;
   items: TakeoffItemDetail[];
+  /** Pins on the plan (Drawings Part 2) -- drawn when the export's notes toggle is on. */
+  notes: TakeoffNoteItem[];
   totalMetres: number;
   grandTotalGbp: number;
   createdAt: Date;
 };
 
 /**
- * Same shape as getTakeoff(), but with the takeoff's raw PDF storage path
- * instead of a resolved signed URL -- for the marked-up-plan export route,
- * which reads the source file itself server-side.
- *
- * Known limitation from Drawings Part 1 Step 4: a drawing can now hold
- * several files, but this (and the export route built on it, from Phase
- * 2) only exports the FIRST one -- extending the marked-up-plan export to
- * cover every file is out of this pass's scope. pdfFilePath falls back to
- * Takeoff.pdfFileUrl itself if, somehow, the backfilled TakeoffFile row is
- * missing.
+ * Same shape as getTakeoff(), but with every file's raw PDF storage path
+ * instead of a resolved signed URL -- for the marked-up-plan export
+ * route, which reads each source file itself server-side.
  */
 export async function getTakeoffForExport(id: string): Promise<TakeoffExportDetail | null> {
   const row = await db.takeoff.findFirst({
@@ -227,20 +225,30 @@ export async function getTakeoffForExport(id: string): Promise<TakeoffExportDeta
     include: {
       customer: { select: { id: true, name: true, company: true } },
       items: { orderBy: { sortOrder: "asc" }, include: { measurements: { orderBy: { createdAt: "asc" } } } },
-      files: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" }, take: 1 },
+      files: { where: { deletedAt: null }, orderBy: { sortOrder: "asc" } },
+      notes: { where: { deletedAt: null }, orderBy: { createdAt: "asc" } },
     },
   });
   if (!row) return null;
 
   const items = row.items.map(summariseItem);
+  // Every pre-Step-4 takeoff was backfilled with exactly one TakeoffFile --
+  // this only falls back to the legacy column if that row is somehow
+  // missing, same safety net as getTakeoffFileRawPath.
+  const files: TakeoffExportFile[] =
+    row.files.length > 0
+      ? row.files.map((f) => ({ id: f.id, name: f.name, rawPath: f.fileUrl, sortOrder: f.sortOrder, pointsPerMetre: f.pointsPerMetre }))
+      : [{ id: "legacy", name: "Plan", rawPath: row.pdfFileUrl, sortOrder: 0, pointsPerMetre: null }];
+
   return {
     id: row.id,
     name: row.name,
-    pdfFilePath: row.files[0]?.fileUrl ?? row.pdfFileUrl,
+    files,
     customer: row.customer,
     pointsPerMetre: row.pointsPerMetre,
     scaleRatioLabel: row.scaleRatioLabel,
     items,
+    notes: row.notes.map((n) => ({ id: n.id, pageNumber: n.pageNumber, takeoffFileId: n.takeoffFileId, x: n.x, y: n.y, text: n.text, createdAt: n.createdAt })),
     totalMetres: +items.reduce((sum, i) => sum + i.totalMetres, 0).toFixed(2),
     grandTotalGbp: +items.reduce((sum, i) => sum + i.lineTotalGbp, 0).toFixed(2),
     createdAt: row.createdAt,
