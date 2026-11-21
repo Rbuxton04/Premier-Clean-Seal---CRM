@@ -18,7 +18,7 @@ export type ItemsPanelProps = {
   rateCardItems: RateCardItem[];
   selectedItemId: string | null;
   onSelectItem: (id: string) => void;
-  onCreateItem: (name: string, colour: string, kind: "LENGTH" | "COUNT", pricePerMetre: number) => Promise<void>;
+  onCreateItem: (name: string, colour: string, kind: "LENGTH" | "COUNT", pricePerMetre: number, overrides?: ItemOverrides) => Promise<void>;
   onUpdateItemRate: (id: string, pricePerMetre: number) => Promise<void>;
   onDeleteItem: (id: string) => Promise<void>;
   onAddAllFromRateCard: () => Promise<void>;
@@ -60,8 +60,14 @@ export function ItemsPanel({
     const preset = rateCardItems.find((p) => p.id === pickedPresetId);
     if (!preset) return;
     setPending(true);
-    // The rate card is LENGTH-only -- it predates Drawings Part 2's count items.
-    await onCreateItem(preset.name, preset.colour, "LENGTH", Number(preset.pricePerMetre));
+    // Copies kind and any joint overrides too (Drawings Part 3) -- a
+    // snapshot, same as name/colour/price: editing the preset afterwards
+    // never touches this TakeoffItem.
+    await onCreateItem(preset.name, preset.colour, preset.kind, Number(preset.pricePerMetre), {
+      overrideJointWidthMm: preset.overrideJointWidthMm,
+      overrideJointDepthMm: preset.overrideJointDepthMm,
+      overrideWastePercent: preset.overrideWastePercent,
+    });
     setPending(false);
     resetAddForm();
   }
@@ -130,7 +136,7 @@ export function ItemsPanel({
             <>
               <Select value={pickedPresetId} onChange={(e) => setPickedPresetId(e.target.value)} className="h-9 text-sm">
                 {rateCardItems.map((p) => (
-                  <option key={p.id} value={p.id}>{p.name} — {formatGBP(Number(p.pricePerMetre))}/m</option>
+                  <option key={p.id} value={p.id}>{p.name} — {formatGBP(Number(p.pricePerMetre))}{p.kind === "COUNT" ? "/item" : "/m"}</option>
                 ))}
               </Select>
               <div className="flex gap-2">

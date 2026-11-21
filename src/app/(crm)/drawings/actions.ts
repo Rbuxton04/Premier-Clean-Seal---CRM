@@ -276,11 +276,16 @@ export async function addAllFromRateCardAction(
   }
 }
 
-/** "Save to rate card" on a custom item on a takeoff -- requires rate-card write access, since it writes the shared card. */
-export async function saveItemAsPresetAction(name: string, colour: string, pricePerMetre: number): Promise<ActionResult<{ created: boolean }>> {
+/** "Save to rate card" on an item on a takeoff -- requires rate-card write access, since it writes the shared card. Carries kind and any joint overrides across too (Drawings Part 3), not just colour/price. */
+export async function saveItemAsPresetAction(
+  name: string,
+  colour: string,
+  pricePerMetre: number,
+  extra: RateCardService.UpsertPresetInput
+): Promise<ActionResult<{ created: boolean }>> {
   try {
     await requirePermission("takeoffRateCard", "create");
-    const result = await RateCardService.upsertRateCardItemByName(name, colour, pricePerMetre);
+    const result = await RateCardService.upsertRateCardItemByName(name, colour, pricePerMetre, extra);
     revalidatePath("/drawings/rate-card");
     return { ok: true, data: { created: result.created } };
   } catch (err) {

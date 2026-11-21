@@ -18,7 +18,7 @@ import {
   createTakeoffFileAction, renameTakeoffFileAction, moveTakeoffFileAction, removeTakeoffFileAction, countMeasurementsOnFileAction,
   createTakeoffNoteAction, updateTakeoffNoteAction, deleteTakeoffNoteAction, restoreTakeoffNoteAction,
 } from "../actions";
-import { ItemsPanel } from "./items-panel";
+import { ItemsPanel, type ItemOverrides } from "./items-panel";
 import { ScaleControls } from "./scale-controls";
 import { OutputActions } from "./output-actions";
 import { TopBar } from "./workspace/top-bar";
@@ -1024,12 +1024,13 @@ export function MeasureTool({
   }
 
   // --- Items -----------------------------------------------------------
-  async function handleCreateItem(name: string, colour: string, kind: "LENGTH" | "COUNT", pricePerMetre: number) {
-    const result = await createTakeoffItemAction(takeoff.id, { name, colour, kind, pricePerMetre, sortOrder: items.length });
+  async function handleCreateItem(name: string, colour: string, kind: "LENGTH" | "COUNT", pricePerMetre: number, overrides?: ItemOverrides) {
+    const ov = overrides ?? { overrideJointWidthMm: null, overrideJointDepthMm: null, overrideWastePercent: null };
+    const result = await createTakeoffItemAction(takeoff.id, { name, colour, kind, pricePerMetre, sortOrder: items.length, ...ov });
     if (result.ok) {
       const newItem: TakeoffItemDetail = {
         id: result.data.id, name, colour, kind, pricePerMetre, sortOrder: items.length,
-        overrideJointWidthMm: null, overrideJointDepthMm: null, overrideWastePercent: null,
+        ...ov,
         measurements: [], totalMetres: 0, count: 0, lineTotalGbp: 0,
       };
       setItems((cur) => [...cur, newItem]);
@@ -1079,16 +1080,21 @@ export function MeasureTool({
     setItems((cur) => [
       ...cur,
       ...result.data.map((p): TakeoffItemDetail => ({
-        id: p.id, name: p.name, colour: p.colour, kind: "LENGTH", pricePerMetre: Number(p.pricePerMetre), sortOrder: p.sortOrder,
-        overrideJointWidthMm: null, overrideJointDepthMm: null, overrideWastePercent: null,
+        id: p.id, name: p.name, colour: p.colour, kind: p.kind, pricePerMetre: Number(p.pricePerMetre), sortOrder: p.sortOrder,
+        overrideJointWidthMm: p.overrideJointWidthMm, overrideJointDepthMm: p.overrideJointDepthMm, overrideWastePercent: p.overrideWastePercent,
         measurements: [], totalMetres: 0, count: 0, lineTotalGbp: 0,
       })),
     ]);
   }
 
-  /** Save-to-rate-card never changes anything on THIS takeoff -- it only writes the shared rate card. */
+  /** Save-to-rate-card never changes anything on THIS takeoff -- it only writes the shared rate card. Carries kind and any joint overrides too (Drawings Part 3). */
   async function handleSaveItemToRateCard(item: TakeoffItemDetail) {
-    await saveItemAsPresetAction(item.name, item.colour, Number(item.pricePerMetre));
+    await saveItemAsPresetAction(item.name, item.colour, Number(item.pricePerMetre), {
+      kind: item.kind,
+      overrideJointWidthMm: item.overrideJointWidthMm,
+      overrideJointDepthMm: item.overrideJointDepthMm,
+      overrideWastePercent: item.overrideWastePercent,
+    });
   }
 
   async function handleDeleteItem(id: string) {

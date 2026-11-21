@@ -1318,8 +1318,21 @@ model TakeoffItemPreset {
 
   name          String
   colour        String
+  // Added in Drawings Part 3 -- this rate card predates Drawings Part 2's
+  // COUNT items and worst-case materials overrides, so every pre-existing
+  // row backfills to kind=LENGTH (the column default) with all three
+  // overrides left null ("use the organisation default"), same as every
+  // TakeoffItem did when these were first added there.
+  kind          TakeoffItemKind @default(LENGTH)
   pricePerMetre Decimal @db.Decimal(10, 2)
   sortOrder     Int     @default(0)
+
+  // Worst-case materials overrides -- LENGTH only, null means "use the
+  // organisation's TakeoffMaterialDefaults", same convention as the
+  // matching columns on TakeoffItem.
+  overrideJointWidthMm Int?
+  overrideJointDepthMm Int?
+  overrideWastePercent Float?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

@@ -248,7 +248,13 @@ export type TakeoffNoteUpdateInput = z.infer<typeof takeoffNoteUpdateSchema>;
 export const takeoffItemPresetSchema = z.object({
   name: z.string().min(1, "Name is required"),
   colour: z.string().min(1),
+  // Added in Drawings Part 3, mirroring TakeoffItemInput -- see the schema
+  // comment on TakeoffItemPreset.kind.
+  kind: z.enum(takeoffItemKinds).default("LENGTH"),
   pricePerMetre: z.coerce.number().nonnegative(),
+  overrideJointWidthMm: z.coerce.number().int().positive().nullable().optional(),
+  overrideJointDepthMm: z.coerce.number().int().positive().nullable().optional(),
+  overrideWastePercent: z.coerce.number().min(0).nullable().optional(),
 });
 export type TakeoffItemPresetInput = z.infer<typeof takeoffItemPresetSchema>;
 
